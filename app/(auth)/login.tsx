@@ -9,6 +9,7 @@ import { Redirect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
@@ -81,50 +82,62 @@ export default function LoginScreen() {
         <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
           <View style={styles.inputWrap}>
             <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={Colors.textMuted}
-              secureTextEntry={!showPass}
-              autoFocus
-              returnKeyType={!hasPassword ? 'next' : 'done'}
-              onSubmitEditing={hasPassword ? handleSubmit : undefined}
-            />
-            <TouchableOpacity onPress={() => setShowPass(p => !p)} hitSlop={8}>
-              <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textSecondary} />
-            </TouchableOpacity>
+            <Tooltip label="Enter your app password">
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={Colors.textMuted}
+                secureTextEntry={!showPass}
+                autoFocus
+                returnKeyType={!hasPassword ? 'next' : 'done'}
+                onSubmitEditing={hasPassword ? handleSubmit : undefined}
+                accessibilityLabel="Password"
+              />
+            </Tooltip>
+            <Tooltip label={showPass ? 'Hide password' : 'Show password'}>
+              <TouchableOpacity onPress={() => setShowPass(p => !p)} hitSlop={8} accessibilityRole="button" accessibilityLabel={showPass ? 'Hide password' : 'Show password'}>
+                <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </Tooltip>
           </View>
 
           {!hasPassword && (
             <View style={styles.inputWrap}>
               <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={confirm}
-                onChangeText={setConfirm}
-                placeholder="Confirm password"
-                placeholderTextColor={Colors.textMuted}
-                secureTextEntry={!showPass}
-                returnKeyType="done"
-                onSubmitEditing={handleSubmit}
-              />
+              <Tooltip label="Type the same password again to confirm">
+                <TextInput
+                  style={styles.input}
+                  value={confirm}
+                  onChangeText={setConfirm}
+                  placeholder="Confirm password"
+                  placeholderTextColor={Colors.textMuted}
+                  secureTextEntry={!showPass}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Confirm password"
+                />
+              </Tooltip>
             </View>
           )}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <TouchableOpacity
-            style={[styles.btn, loading && styles.btnDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.btnText}>
-              {loading ? 'Please wait...' : hasPassword ? 'Unlock' : 'Create Password'}
-            </Text>
-          </TouchableOpacity>
+          <Tooltip label={hasPassword ? 'Unlock vault with your password' : 'Create the password that will protect your vault'}>
+            <TouchableOpacity
+              style={[styles.btn, loading && styles.btnDisabled]}
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={hasPassword ? 'Unlock' : 'Create password'}
+            >
+              <Text style={styles.btnText}>
+                {loading ? 'Please wait...' : hasPassword ? 'Unlock' : 'Create Password'}
+              </Text>
+            </TouchableOpacity>
+          </Tooltip>
         </Animated.View>
       </View>
     </KeyboardAvoidingView>

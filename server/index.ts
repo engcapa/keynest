@@ -2,8 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import accountsRouter from './routes/accounts';
 import settingsRouter from './routes/settings';
+import { createAuthRouter } from './routes/auth';
 import { loadConfig } from './config';
 import { initFromConfig } from './db';
+import { AuthStore, createAuthMiddleware } from './auth';
 import { WEB_BUNDLE } from './web-bundle.generated';
 
 function sendBundled(res: express.Response, entry: { type: string; data: string }) {
@@ -20,12 +22,18 @@ async function main() {
   app.use(cors({
     origin: true,
     credentials: true,
+    exposedHeaders: ['X-Keynest-Auth-Required'],
   }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  app.use('/api/accounts', accountsRouter);
-  app.use('/api/settings', settingsRouter);
+  const authStore = new AuthStore(cfg.configPath);
+  authStore.load({ passwordHash: cfg.auth.passwordHash });
+  const requireAuth = createAuthMiddleware(authStore);
+
+  app.use('/api/auth', createAuthRouter(authStore));
+  app.use('/api/accounts', requireAuth, accountsRouter);
+  app.use('/api/settings', requireAuth, settingsRouter);
 
   app.get('/health', (_, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
@@ -77,11 +85,13 @@ async function main() {
             <p>Backend server for Key Nest authenticator app</p>
             <span class="badge">Running on port ${cfg.port}</span>
             <ul style="margin-top: 24px">
-              <li>GET /api/accounts — list all accounts</li>
-              <li>POST /api/accounts — create account</li>
-              <li>PUT /api/accounts/:id — update account</li>
-              <li>DELETE /api/accounts/:id — delete account</li>
-              <li>GET /api/settings/status — sync availability</li>
+              <li>GET /api/auth/status — check if password is set</li>
+              <li>POST /api/auth/login — authenticate and receive token</li>
+              <li>GET /api/accounts — list all accounts (auth required)</li>
+              <li>POST /api/accounts — create account (auth required)</li>
+              <li>PUT /api/accounts/:id — update account (auth required)</li>
+              <li>DELETE /api/accounts/:id — delete account (auth required)</li>
+              <li>GET /api/settings/status — sync availability (auth required)</li>
               <li>GET /health — health check</li>
             </ul>
             <p class="hint">Run <code>npm run build:web</code> then <code>npm run bundle:web</code> to embed the web app.</p>
@@ -101,6 +111,12 @@ async function main() {
     console.log(`MySQL connected to ${cfg.database.host}:${cfg.database.port}/${cfg.database.database}`);
   } else {
     console.warn('MySQL not configured — offline-only mode (accounts endpoints will return 503)');
+  }
+
+  if (authStore.hasPassword()) {
+    console.log('Web auth: password configured (clients must log in)');
+  } else {
+    console.log('Web auth: no password configured (first visitor will set it up)');
   }
 
   app.listen(cfg.port, cfg.host, () => {

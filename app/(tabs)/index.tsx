@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, ActivityIndicator,
-  Platform,
+  Platform, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import AccountCard from '@/components/AccountCard';
+import { Tooltip } from '@/components/Tooltip';
 import { useAccounts, SortBy } from '@/contexts/AccountsContext';
 import type { OTPAccount } from '@/lib/otp';
 
@@ -19,9 +20,33 @@ const SORT_OPTIONS: { label: string; value: SortBy }[] = [
   { label: 'Added', value: 'createdAt' },
 ];
 
+function confirm(title: string, message: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(typeof window !== 'undefined' ? window.confirm(`${title}\n\n${message}`) : false);
+  }
+  return new Promise(resolve => {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Continue', onPress: () => resolve(true) },
+    ]);
+  });
+}
+
+function notify(message: string) {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') window.alert(message);
+    return;
+  }
+  Alert.alert('Save Remote', message);
+}
+
 export default function AccountsScreen() {
   const insets = useSafeAreaInsets();
-  const { filteredAccounts, isLoading, searchQuery, sortBy, setSearchQuery, setSortBy, syncWithRemote, isSyncing } = useAccounts();
+  const {
+    filteredAccounts, accounts, isLoading,
+    searchQuery, sortBy, setSearchQuery, setSortBy,
+    syncWithRemote, pushAllToRemote, isSyncing,
+  } = useAccounts();
   const [showSort, setShowSort] = useState(false);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -35,6 +60,23 @@ export default function AccountsScreen() {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await syncWithRemote();
   }, [syncWithRemote]);
+
+  const handlePushAll = useCallback(async () => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (accounts.length === 0) {
+      notify('Nothing to push — your local vault is empty.');
+      return;
+    }
+    const ok = await confirm(
+      'Save to remote?',
+      `Upload all ${accounts.length} local account${accounts.length !== 1 ? 's' : ''} to the remote database. Existing rows with the same id will be overwritten.`
+    );
+    if (!ok) return;
+    const result = await pushAllToRemote();
+    if (result) {
+      notify(`Pushed ${result.pushed} account${result.pushed !== 1 ? 's' : ''}${result.failed ? `, ${result.failed} failed` : ''}.`);
+    }
+  }, [accounts.length, pushAllToRemote]);
 
   const renderItem = useCallback(({ item }: { item: OTPAccount }) => (
     <AccountCard account={item} />
@@ -50,61 +92,107 @@ export default function AccountsScreen() {
           <Text style={styles.count}>{filteredAccounts.length} account{filteredAccounts.length !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={handleSync} style={styles.headerBtn} hitSlop={8} disabled={isSyncing}>
-            {isSyncing
-              ? <ActivityIndicator size="small" color={Colors.primary} />
-              : <Ionicons name="cloud-download-outline" size={22} color={Colors.textSecondary} />
-            }
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleAdd} style={styles.addBtn} hitSlop={8}>
-            <Ionicons name="add" size={24} color="#fff" />
-          </TouchableOpacity>
+          <Tooltip label="Pull from remote (sync down)">
+            <TouchableOpacity
+              onPress={handleSync}
+              style={styles.headerBtn}
+              hitSlop={8}
+              disabled={isSyncing}
+              accessibilityRole="button"
+              accessibilityLabel="Pull from remote"
+            >
+              {isSyncing
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Ionicons name="cloud-download-outline" size={22} color={Colors.textSecondary} />
+              }
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label="Save all to remote (push up)">
+            <TouchableOpacity
+              onPress={handlePushAll}
+              style={styles.headerBtn}
+              hitSlop={8}
+              disabled={isSyncing}
+              accessibilityRole="button"
+              accessibilityLabel="Save all to remote"
+            >
+              <Ionicons name="cloud-upload-outline" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label="Add new account">
+            <TouchableOpacity
+              onPress={handleAdd}
+              style={styles.addBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Add account"
+            >
+              <Ionicons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          </Tooltip>
         </View>
       </View>
 
       <View style={styles.toolbar}>
         <View style={styles.searchWrap}>
           <Ionicons name="search-outline" size={16} color={Colors.textSecondary} style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.search}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search accounts..."
-            placeholderTextColor={Colors.textMuted}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
+          <Tooltip label="Search by name or issuer">
+            <TextInput
+              style={styles.search}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search accounts..."
+              placeholderTextColor={Colors.textMuted}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              accessibilityLabel="Search accounts"
+            />
+          </Tooltip>
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={Colors.textSecondary} />
-            </TouchableOpacity>
+            <Tooltip label="Clear search">
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={16} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </Tooltip>
           )}
         </View>
 
-        <TouchableOpacity
-          style={styles.sortBtn}
-          onPress={() => setShowSort(p => !p)}
-          hitSlop={8}
-        >
-          <Ionicons name="funnel-outline" size={16} color={showSort ? Colors.primary : Colors.textSecondary} />
-        </TouchableOpacity>
+        <Tooltip label="Sort accounts">
+          <TouchableOpacity
+            style={styles.sortBtn}
+            onPress={() => setShowSort(p => !p)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Sort accounts"
+          >
+            <Ionicons name="funnel-outline" size={16} color={showSort ? Colors.primary : Colors.textSecondary} />
+          </TouchableOpacity>
+        </Tooltip>
       </View>
 
       {showSort && (
         <View style={styles.sortMenu}>
           {SORT_OPTIONS.map(opt => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.sortOption, sortBy === opt.value && styles.sortOptionActive]}
-              onPress={() => { setSortBy(opt.value); setShowSort(false); }}
-            >
-              <Text style={[styles.sortOptionText, sortBy === opt.value && { color: Colors.primary }]}>
-                {opt.label}
-              </Text>
-              {sortBy === opt.value && (
-                <Ionicons name="checkmark" size={14} color={Colors.primary} />
-              )}
-            </TouchableOpacity>
+            <Tooltip key={opt.value} label={`Sort by ${opt.label.toLowerCase()}`}>
+              <TouchableOpacity
+                style={[styles.sortOption, sortBy === opt.value && styles.sortOptionActive]}
+                onPress={() => { setSortBy(opt.value); setShowSort(false); }}
+                accessibilityRole="button"
+                accessibilityLabel={`Sort by ${opt.label}`}
+              >
+                <Text style={[styles.sortOptionText, sortBy === opt.value && { color: Colors.primary }]}>
+                  {opt.label}
+                </Text>
+                {sortBy === opt.value && (
+                  <Ionicons name="checkmark" size={14} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+            </Tooltip>
           ))}
         </View>
       )}
@@ -123,9 +211,16 @@ export default function AccountsScreen() {
             {searchQuery ? 'Try a different search' : 'Tap + to add your first authenticator account'}
           </Text>
           {!searchQuery && (
-            <TouchableOpacity style={styles.emptyBtn} onPress={handleAdd}>
-              <Text style={styles.emptyBtnText}>Add Account</Text>
-            </TouchableOpacity>
+            <Tooltip label="Add new account">
+              <TouchableOpacity
+                style={styles.emptyBtn}
+                onPress={handleAdd}
+                accessibilityRole="button"
+                accessibilityLabel="Add account"
+              >
+                <Text style={styles.emptyBtnText}>Add Account</Text>
+              </TouchableOpacity>
+            </Tooltip>
           )}
         </View>
       ) : (
@@ -155,11 +250,12 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 26, fontWeight: '700', color: Colors.text, fontFamily: 'Inter_700Bold' },
   count: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerBtn: { padding: 8, width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   addBtn: {
     backgroundColor: Colors.primary, width: 40, height: 40,
     borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    marginLeft: 4,
   },
   toolbar: {
     flexDirection: 'row', alignItems: 'center',

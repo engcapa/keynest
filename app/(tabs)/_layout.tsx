@@ -32,6 +32,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Accounts',
+          tabBarAccessibilityLabel: 'Accounts tab',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="shield-half-outline" size={size} color={color} />
           ),
@@ -41,6 +42,7 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          tabBarAccessibilityLabel: 'Settings tab',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="settings-outline" size={size} color={color} />
           ),

@@ -2,10 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import type { DBConfig } from './db';
 
+export interface AuthConfig {
+  passwordHash: string | null;
+}
+
 export interface AppConfig {
   port: number;
   host: string;
   database?: DBConfig;
+  auth: AuthConfig;
+  configPath: string;
 }
 
 const DEFAULT_PORT = 3000;
@@ -34,11 +40,24 @@ function parseDatabase(raw: any): DBConfig | undefined {
   return { host, port, database: name, user, password };
 }
 
+function parseAuth(raw: any): AuthConfig {
+  if (!raw || typeof raw !== 'object') return { passwordHash: null };
+  const hash = typeof raw.passwordHash === 'string' && raw.passwordHash.trim()
+    ? raw.passwordHash.trim()
+    : null;
+  return { passwordHash: hash };
+}
+
 export function loadConfig(): AppConfig {
   const configPath = resolveConfigPath();
 
   if (!fs.existsSync(configPath)) {
-    return { port: DEFAULT_PORT, host: DEFAULT_HOST };
+    return {
+      port: DEFAULT_PORT,
+      host: DEFAULT_HOST,
+      auth: { passwordHash: null },
+      configPath,
+    };
   }
 
   let raw: any;
@@ -52,6 +71,7 @@ export function loadConfig(): AppConfig {
   const port = Number.isFinite(raw?.port) && raw.port > 0 ? Math.floor(raw.port) : DEFAULT_PORT;
   const host = typeof raw?.host === 'string' && raw.host.trim() ? raw.host.trim() : DEFAULT_HOST;
   const database = parseDatabase(raw?.database);
+  const auth = parseAuth(raw?.auth);
 
-  return { port, host, database };
+  return { port, host, database, auth, configPath };
 }
