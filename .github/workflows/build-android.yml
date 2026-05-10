@@ -90,6 +90,8 @@ jobs:
           #    graph can exhaust the Gradle daemon heap;
           # 2. running R8/resource tasks concurrently leaves too little headroom
           #    for the daemon and its native file watcher.
+          # Keep two worker slots for D8 dexing after R8 is disabled; forcing a
+          # single slot makes :app:mergeExtDexRelease look hung on GitHub runners.
           #
           # Pin Kotlin to 1.9.24 to match the version shipped by
           # @react-native/gradle-plugin (gradle/libs.versions.toml: kotlin = "1.9.24"),
@@ -102,7 +104,7 @@ jobs:
           sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^org\.gradle\.parallel=/d; /^org\.gradle\.vfs\.watch=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d; /^android\.kotlinVersion=/d; /^android\.r8\.maxHeapSize=/d; /^android\.enableProguardInReleaseBuilds=/d; /^android\.enableShrinkResourcesInReleaseBuilds=/d; /^android\.enablePngCrunchInReleaseBuilds=/d' gradle.properties
           cat >> gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
-          org.gradle.workers.max=1
+          org.gradle.workers.max=2
           org.gradle.parallel=false
           org.gradle.vfs.watch=false
           kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m
@@ -131,7 +133,7 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --no-watch-fs --stacktrace --max-workers=1 -Pandroid.enableProguardInReleaseBuilds=false -Pandroid.enableShrinkResourcesInReleaseBuilds=false -x lintVitalRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease
+        run: ./gradlew assembleRelease --no-daemon --no-watch-fs --stacktrace --max-workers=2 -Pandroid.enableProguardInReleaseBuilds=false -Pandroid.enableShrinkResourcesInReleaseBuilds=false -x lintVitalRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease
 
       - name: Locate APK
         id: apk

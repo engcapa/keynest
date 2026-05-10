@@ -18,5 +18,9 @@ android {
 }
 
 dependencies {
-  implementation "com.mysql:mysql-connector-j:8.4.0"
+  implementation("com.mysql:mysql-connector-j:8.4.0") {
+    // Key Nest only uses the JDBC driver path. Connector/J pulls protobuf for
+    // X DevAPI, which makes Android dex merging much heavier for release APKs.
+    exclude group: "com.google.protobuf", module: "protobuf-java"
+  }
 }
