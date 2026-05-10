@@ -179,7 +179,7 @@ class KeynestMysqlModule : Module() {
           ps.executeUpdate()
         }
       }
-      null
+      true
     }
 
     AsyncFunction("deleteAccount") { cfg: Map<String, Any?>, id: String ->
@@ -191,7 +191,7 @@ class KeynestMysqlModule : Module() {
           ps.executeUpdate()
         }
       }
-      null
+      true
     }
   }
 }
