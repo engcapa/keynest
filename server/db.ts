@@ -54,12 +54,20 @@ export async function ensureTable(cfg: DBConfig): Promise<void> {
       period INT DEFAULT 30,
       type VARCHAR(10) DEFAULT 'totp',
       counter INT DEFAULT 0,
-      created_at VARCHAR(64),
-      updated_at VARCHAR(64)
+      pinned TINYINT(1) DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
   `);
 }
 
 export function getActivePool(): mysql.Pool | null {
   return pool;
+}
+
+export async function initFromConfig(db?: DBConfig): Promise<boolean> {
+  if (!db || !db.host || !db.database || !db.user) return false;
+  await getPool(db);
+  await ensureTable(db);
+  return true;
 }

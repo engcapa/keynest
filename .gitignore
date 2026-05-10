@@ -71,3 +71,6 @@ ios/DerivedData/
 
 # Server standalone binaries (built by CI)
 keynest-server-*
+
+# Server runtime config (contains MySQL credentials)
+keynest.config.json

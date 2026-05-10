@@ -55,16 +55,60 @@ npm run android    # Android device / emulator
 ### Run the backend (optional)
 
 ```bash
-npm run server     # Express API on port 5000
+npm run server     # Express API on port 3000
 ```
 
 The backend is only needed for MySQL sync. If you use the app in local-only mode, you can skip it.
 
-### Environment variables
+### Server configuration (`keynest.config.json`)
 
-| Variable | Default | Description |
+The backend reads its configuration from a JSON file. Database credentials are managed by the
+server operator — the web UI no longer exposes MySQL fields.
+
+Copy the example and edit it:
+
+```bash
+cp keynest.config.example.json keynest.config.json
+```
+
+Example file:
+
+```json
+{
+  "port": 3000,
+  "host": "0.0.0.0",
+  "database": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "name": "keynest",
+    "user": "keynest",
+    "password": "replace-me"
+  }
+}
+```
+
+| Field | Default | Description |
 |---|---|---|
-| `PORT` | `5000` | Port the Express server listens on |
+| `port` | `3000` | Port the Express server listens on |
+| `host` | `0.0.0.0` | Bind address (`127.0.0.1` to restrict to localhost) |
+| `database.host` | — | MySQL host (required to enable sync) |
+| `database.port` | `3306` | MySQL port |
+| `database.name` | — | Database name (required) |
+| `database.user` | — | MySQL user (required) |
+| `database.password` | `""` | MySQL password |
+
+**Config file lookup order** (highest priority first):
+
+1. `--config <path>` CLI flag
+2. `KEYNEST_CONFIG` environment variable
+3. `./keynest.config.json` (relative to the current working directory)
+
+If the `database` section is missing or incomplete, the server starts in offline-only mode:
+`/api/accounts` returns `503` and clients automatically fall back to local storage. The server
+also auto-creates the `mfa_accounts` table on startup when MySQL is configured.
+
+> `keynest.config.json` is listed in `.gitignore` — never commit real credentials. Set the file
+> permissions to `600` on Linux/macOS so only the service user can read it.
 
 ## Project Structure
 
@@ -89,26 +133,28 @@ lib/
   query-client.ts  API request helper
 server/
   index.ts         Express entry point
+  config.ts        Config file loader (keynest.config.json)
   db.ts            MySQL connection management
   routes/
     accounts.ts    CRUD API for accounts
-    settings.ts    MySQL config test endpoint
+    settings.ts    Sync availability status endpoint
 ```
 
 ## MySQL Schema
 
-Run this once on your MySQL server:
+The backend auto-creates the `mfa_accounts` table on startup when MySQL is configured. If you
+prefer to provision the schema manually, run this on your MySQL server:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS keynest;
 USE keynest;
 
 CREATE TABLE IF NOT EXISTS mfa_accounts (
-  id          VARCHAR(36)  NOT NULL PRIMARY KEY,
-  uri         TEXT,
+  id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+  uri         TEXT         NOT NULL,
   name        VARCHAR(255) NOT NULL,
   issuer      VARCHAR(255) DEFAULT '',
-  secret      TEXT         NOT NULL,
+  secret      VARCHAR(512) NOT NULL,
   algorithm   VARCHAR(10)  DEFAULT 'SHA1',
   digits      INT          DEFAULT 6,
   period      INT          DEFAULT 30,
@@ -119,6 +165,47 @@ CREATE TABLE IF NOT EXISTS mfa_accounts (
   updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 ```
+
+## Running the backend in production
+
+### From source
+
+```bash
+# 1. Compile TypeScript
+npx tsc --project tsconfig.server.json
+
+# 2. Create and edit the config file next to server-dist/
+cp keynest.config.example.json keynest.config.json
+# edit keynest.config.json — fill in MySQL credentials
+
+# 3. Start the server
+node server-dist/index.js
+# or point to a config at a custom path:
+node server-dist/index.js --config /etc/keynest/config.json
+```
+
+### From a released binary
+
+Download the binary for your platform from the [Releases](../../releases) page.
+
+```bash
+chmod +x keynest-server-linux-x64
+cp keynest.config.example.json keynest.config.json
+# edit keynest.config.json
+
+./keynest-server-linux-x64
+# or with a custom config path:
+./keynest-server-linux-x64 --config /etc/keynest/config.json
+# or via environment variable:
+KEYNEST_CONFIG=/etc/keynest/config.json ./keynest-server-linux-x64
+```
+
+**Notes**
+
+- `keynest.config.json` contains database credentials. It is git-ignored; do not commit it.
+- Restrict file permissions: `chmod 600 keynest.config.json`.
+- If `keynest.config.json` is absent or the `database` section is incomplete, the server boots in
+  offline-only mode. `/api/accounts` will return `503` and clients fall back to local storage.
 
 ## Releases
 

@@ -5,17 +5,6 @@ import type { OTPAccount } from './otp';
 
 const ACCOUNTS_KEY = 'mfa_vault_accounts';
 const PASSWORD_KEY = 'mfa_vault_password';
-const SETTINGS_KEY = 'mfa_vault_settings';
-
-export interface AppSettings {
-  mysqlHost?: string;
-  mysqlPort?: number;
-  mysqlDatabase?: string;
-  mysqlUser?: string;
-  mysqlPassword?: string;
-  mysqlEnabled: boolean;
-  serverUrl?: string;
-}
 
 async function secureGet(key: string): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -66,22 +55,6 @@ export async function setPasswordHash(hash: string): Promise<void> {
 
 export async function clearPassword(): Promise<void> {
   await secureDelete(PASSWORD_KEY);
-}
-
-export async function loadSettings(): Promise<AppSettings> {
-  try {
-    const data = await AsyncStorage.getItem(SETTINGS_KEY);
-    if (!data) return { mysqlEnabled: false };
-    return JSON.parse(data) as AppSettings;
-  } catch {
-    return { mysqlEnabled: false };
-  }
-}
-
-export async function saveSettings(settings: AppSettings): Promise<void> {
-  try {
-    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch { /* ignore */ }
 }
 
 export async function hashPassword(password: string): Promise<string> {

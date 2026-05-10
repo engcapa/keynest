@@ -17,14 +17,14 @@ A multi-factor authentication (MFA) authenticator app that works as both an Andr
 ## Architecture
 
 - **Frontend**: Expo (React Native + Web) running on port 8081
-- **Backend**: Express.js API server running on port 5000
+- **Backend**: Express.js API server running on port 3000
 - **Local DB**: AsyncStorage (for offline mobile use)
-- **Remote DB**: MySQL (optional, configured in Settings)
+- **Remote DB**: MySQL (optional, configured via `keynest.config.json` on the server)
 
 ## Workflows
 
 - `Start Frontend` — starts the Expo dev server (port 8081)
-- `Start Backend` — starts the Express API server (port 5000)
+- `Start Backend` — starts the Express API server (port 3000)
 
 ## Project Structure
 
