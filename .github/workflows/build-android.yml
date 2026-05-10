@@ -66,6 +66,22 @@ jobs:
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --no-install --clean
 
+      - name: Tune Gradle / Kotlin memory for CI
+        working-directory: android
+        run: |
+          # The default template uses -Xmx2048m which is not enough for
+          # expo-modules-core's KSP+Kotlin compile on ubuntu-latest (7 GB).
+          # Remove existing memory-related lines and append CI-tuned ones.
+          sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d' gradle.properties
+          cat >> gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          org.gradle.workers.max=2
+          kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m
+          reactNativeArchitectures=arm64-v8a
+          EOF
+          echo "--- final gradle.properties ---"
+          cat gradle.properties
+
       - name: Make gradlew executable
         working-directory: android
         run: chmod +x ./gradlew
@@ -82,7 +98,7 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace --info
+        run: ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=2
 
       - name: Locate APK
         id: apk
