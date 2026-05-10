@@ -36,11 +36,6 @@ jobs:
       - name: Install Expo CLI
         run: npm install -g @expo/cli eas-cli
 
-      - name: Setup EAS
-        run: eas build:configure --platform android --non-interactive
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
       - name: Build APK with EAS (local)
         run: eas build --platform android --profile preview --local --output ./keynest.apk --non-interactive
         env:
