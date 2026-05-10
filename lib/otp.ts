@@ -21,32 +21,31 @@ export interface OTPAccount {
 
 export function parseOtpUri(uri: string): Partial<OTPAccount> | null {
   try {
-    if (uri.startsWith('otpauth://totp/')) {
-      const totp = OTPAuth.TOTP.parse(uri);
+    const parsed = OTPAuth.URI.parse(uri);
+    if (parsed instanceof OTPAuth.TOTP) {
       return {
         uri,
-        name: totp.label || totp.issuer || 'Unknown',
-        issuer: totp.issuer || '',
-        secret: totp.secret.base32,
-        algorithm: (totp.algorithm as OTPAlgorithm) || 'SHA1',
-        digits: (totp.digits as 6 | 8) || 6,
-        period: totp.period || 30,
+        name: parsed.label || parsed.issuer || 'Unknown',
+        issuer: parsed.issuer || '',
+        secret: parsed.secret.base32,
+        algorithm: (parsed.algorithm as OTPAlgorithm) || 'SHA1',
+        digits: (parsed.digits as 6 | 8) || 6,
+        period: parsed.period || 30,
         type: 'totp',
         counter: 0,
         pinned: false,
       };
-    } else if (uri.startsWith('otpauth://hotp/')) {
-      const hotp = OTPAuth.HOTP.parse(uri);
+    } else if (parsed instanceof OTPAuth.HOTP) {
       return {
         uri,
-        name: hotp.label || hotp.issuer || 'Unknown',
-        issuer: hotp.issuer || '',
-        secret: hotp.secret.base32,
-        algorithm: (hotp.algorithm as OTPAlgorithm) || 'SHA1',
-        digits: (hotp.digits as 6 | 8) || 6,
+        name: parsed.label || parsed.issuer || 'Unknown',
+        issuer: parsed.issuer || '',
+        secret: parsed.secret.base32,
+        algorithm: (parsed.algorithm as OTPAlgorithm) || 'SHA1',
+        digits: (parsed.digits as 6 | 8) || 6,
         period: 30,
         type: 'hotp',
-        counter: hotp.counter || 0,
+        counter: parsed.counter || 0,
         pinned: false,
       };
     }

@@ -50,7 +50,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const local = await loadAccounts();
-      const migrated = local.map(a => ({ pinned: false, ...a }));
+      const migrated = local.map(a => ({ ...a, pinned: a.pinned ?? false }));
       setAccounts(migrated);
       if (Platform.OS === 'web') {
         await syncFromRemote(migrated);
@@ -66,7 +66,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       if (!settings.mysqlEnabled && !settings.serverUrl) return;
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        const migrated = remote.map(a => ({ pinned: false, ...a }));
+        const migrated = remote.map(a => ({ ...a, pinned: a.pinned ?? false }));
         setAccounts(migrated);
         if (Platform.OS !== 'web') {
           await saveAccounts(migrated);
@@ -95,7 +95,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addAccount = useCallback(async (account: OTPAccount) => {
-    const withPin = { pinned: false, ...account };
+    const withPin = { ...account, pinned: account.pinned ?? false };
     const updated = [...accounts, withPin];
     await persist(updated);
     await pushToRemote(withPin, 'POST', '/api/accounts');
@@ -142,7 +142,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        const migrated = remote.map(a => ({ pinned: false, ...a }));
+        const migrated = remote.map(a => ({ ...a, pinned: a.pinned ?? false }));
         setAccounts(migrated);
         await saveAccounts(migrated);
       }

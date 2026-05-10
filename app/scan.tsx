@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Platform,
 } from 'react-native';
@@ -9,24 +9,14 @@ import { Colors } from '@/constants/colors';
 
 let CameraView: any = null;
 let useCameraPermissions: any = null;
+let WebQRScanner: any = null;
 
 if (Platform.OS !== 'web') {
   const CameraModule = require('expo-camera');
   CameraView = CameraModule.CameraView;
   useCameraPermissions = CameraModule.useCameraPermissions;
-}
-
-function WebFallback() {
-  return (
-    <View style={styles.center}>
-      <Ionicons name="camera-off-outline" size={48} color={Colors.textMuted} />
-      <Text style={styles.fallbackTitle}>Camera not available on web</Text>
-      <Text style={styles.fallbackBody}>Use the "URI / QR Code" tab to paste the OTP URI directly.</Text>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>Go Back</Text>
-      </TouchableOpacity>
-    </View>
-  );
+} else {
+  WebQRScanner = require('@/components/WebQRScanner').default;
 }
 
 function NativeScanner() {
@@ -94,7 +84,12 @@ export default function ScanScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        <WebFallback />
+        <WebQRScanner
+          onScan={(data: string) => {
+            router.replace({ pathname: '/add', params: { uri: data } } as any);
+          }}
+          onClose={() => router.back()}
+        />
       </View>
     );
   }
@@ -117,11 +112,6 @@ const styles = StyleSheet.create({
   },
   fallbackTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginTop: 16 },
   fallbackBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  backBtn: {
-    marginTop: 24, backgroundColor: Colors.primary,
-    paddingHorizontal: 28, paddingVertical: 12, borderRadius: Colors.radiusSm,
-  },
-  backBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   permBtn: {
     marginTop: 20, backgroundColor: Colors.primary,
     paddingHorizontal: 28, paddingVertical: 12, borderRadius: Colors.radiusSm,

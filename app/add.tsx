@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Platform, ScrollView, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
@@ -26,6 +26,7 @@ function autoName(): string {
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const { addAccount, accounts } = useAccounts();
+  const { uri } = useLocalSearchParams<{ uri?: string }>();
 
   const [secretInput, setSecretInput] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -41,6 +42,12 @@ export default function AddScreen() {
 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (uri && uri.startsWith('otpauth://')) {
+      setSecretInput(uri);
+    }
+  }, [uri]);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -73,6 +80,7 @@ export default function AddScreen() {
         period: parsed.period || 30,
         type: parsed.type || 'totp',
         counter: parsed.counter || 0,
+        pinned: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -100,6 +108,7 @@ export default function AddScreen() {
         period,
         type,
         counter: parseInt(counter) || 0,
+        pinned: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -132,12 +141,10 @@ export default function AddScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 32 }]}
         showsVerticalScrollIndicator={false}
       >
-        {Platform.OS !== 'web' && (
-          <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/scan')} activeOpacity={0.8}>
-            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
-            <Text style={styles.scanBtnText}>Scan QR Code</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/scan')} activeOpacity={0.8}>
+          <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
+          <Text style={styles.scanBtnText}>Scan QR Code</Text>
+        </TouchableOpacity>
 
         <View style={styles.inputRow}>
           <TextInput
