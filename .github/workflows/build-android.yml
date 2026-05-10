@@ -102,6 +102,10 @@ jobs:
           # which matches the actual Kotlin compiler version and clears the
           # "Compose Compiler requires Kotlin version 1.9.25" error.
           sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^org\.gradle\.parallel=/d; /^org\.gradle\.vfs\.watch=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d; /^android\.kotlinVersion=/d; /^android\.r8\.maxHeapSize=/d; /^android\.enableProguardInReleaseBuilds=/d; /^android\.enableShrinkResourcesInReleaseBuilds=/d; /^android\.enablePngCrunchInReleaseBuilds=/d' gradle.properties
+          # Expo's generated gradle.properties may not end with a newline.
+          # Ensure appended CI properties start as real properties instead of
+          # being concatenated onto android.extraMavenRepos.
+          printf '\n' >> gradle.properties
           cat >> gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
           org.gradle.workers.max=2
@@ -114,6 +118,7 @@ jobs:
           android.enableShrinkResourcesInReleaseBuilds=false
           android.enablePngCrunchInReleaseBuilds=false
           EOF
+          grep -qx 'org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8' gradle.properties
           echo "--- final gradle.properties ---"
           cat gradle.properties
 
