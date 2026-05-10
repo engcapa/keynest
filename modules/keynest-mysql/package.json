@@ -1,0 +1,8 @@
+{
+  "name": "keynest-mysql",
+  "version": "0.1.0",
+  "description": "Local Expo module — direct MySQL (JDBC) client for KeyNest Android",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true
+}

@@ -40,7 +40,18 @@
         {
           "cameraPermission": "Allow Key Nest to access your camera to scan QR codes."
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "enableProguardInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.mysql.** { *; }\n-dontwarn com.mysql.**\n-dontwarn org.slf4j.**\n-dontwarn java.sql.**\n-dontwarn javax.sql.**"
+          }
+        }
+      ],
+      "./plugins/withMysqlConnector.js"
     ],
     "experiments": {
       "typedRoutes": true

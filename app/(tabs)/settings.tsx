@@ -1,12 +1,36 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, Platform, Alert,
+  StyleSheet, ScrollView, Platform, Alert, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccounts } from '@/contexts/AccountsContext';
+import type { MysqlConfig, MysqlSslMode } from '@/lib/storage';
+import { testMysqlConnection } from '@/lib/mysql-client';
+
+const DEFAULT_MYSQL: MysqlConfig = {
+  host: '',
+  port: 3306,
+  user: '',
+  password: '',
+  database: '',
+  sslMode: 'REQUIRED',
+  autoSync: true,
+};
+
+function formatWhen(iso: string | null): string {
+  if (!iso) return 'never';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString();
+  } catch {
+    return iso;
+  }
+}
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -57,10 +81,12 @@ export default function SettingsScreen() {
       <Text style={styles.pageTitle}>Settings</Text>
 
       <Section title="Remote Sync">
-        <Text style={styles.hint}>
-          Remote MySQL sync is configured on the server by your administrator. When enabled, this app
-          automatically syncs accounts with the remote database. No client-side setup is required.
-        </Text>
+        {Platform.OS === 'android' ? <MysqlConfigCard /> : (
+          <Text style={styles.hint}>
+            Remote MySQL sync is configured on the server by your administrator. When enabled, this app
+            automatically syncs accounts with the remote database. No client-side setup is required.
+          </Text>
+        )}
       </Section>
 
       <Section title="Security">
@@ -86,6 +112,172 @@ export default function SettingsScreen() {
         <Text style={styles.footerText}>Supports TOTP · HOTP · SHA1 · SHA256 · SHA512</Text>
       </View>
     </ScrollView>
+  );
+}
+
+function MysqlConfigCard() {
+  const { mysqlConfig, saveMysqlConfig, removeMysqlConfig, syncWithRemote, isSyncing, syncError, lastSyncAt } = useAccounts();
+  const [draft, setDraft] = useState<MysqlConfig>(mysqlConfig ?? DEFAULT_MYSQL);
+  const [testMsg, setTestMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (mysqlConfig) setDraft(mysqlConfig);
+  }, [mysqlConfig]);
+
+  const setField = <K extends keyof MysqlConfig>(key: K, value: MysqlConfig[K]) => {
+    setDraft(prev => ({ ...prev, [key]: value }));
+    setTestMsg(null);
+    setSaveMsg(null);
+  };
+
+  const validate = (): string | null => {
+    if (!draft.host.trim()) return 'Host is required';
+    if (!draft.database.trim()) return 'Database is required';
+    if (!draft.user.trim()) return 'User is required';
+    if (!Number.isFinite(draft.port) || draft.port <= 0) return 'Port must be a positive number';
+    return null;
+  };
+
+  const onTest = async () => {
+    const err = validate();
+    if (err) { setTestMsg({ kind: 'err', text: err }); return; }
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const res = await testMysqlConnection(draft);
+      if (res.ok) setTestMsg({ kind: 'ok', text: 'Connection successful' });
+      else setTestMsg({ kind: 'err', text: res.error || 'Connection failed' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const onSave = async () => {
+    const err = validate();
+    if (err) { setTestMsg({ kind: 'err', text: err }); return; }
+    setTesting(true);
+    try {
+      const res = await testMysqlConnection(draft);
+      if (!res.ok) {
+        setTestMsg({ kind: 'err', text: res.error || 'Connection failed — not saved' });
+        return;
+      }
+      await saveMysqlConfig(draft);
+      setSaveMsg('Saved');
+      setTestMsg({ kind: 'ok', text: 'Connection successful' });
+      setTimeout(() => setSaveMsg(null), 2000);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const onClear = () => {
+    Alert.alert('Remove MySQL config?', 'Local accounts stay on this device. Remote rows are not deleted.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          await removeMysqlConfig();
+          setDraft(DEFAULT_MYSQL);
+          setTestMsg(null);
+          setSaveMsg(null);
+        },
+      },
+    ]);
+  };
+
+  const onSyncNow = async () => {
+    if (validate()) { setTestMsg({ kind: 'err', text: 'Save a valid config before syncing' }); return; }
+    await syncWithRemote();
+  };
+
+  const toggleSsl = () => {
+    const next: MysqlSslMode = draft.sslMode === 'REQUIRED' ? 'DISABLED' : 'REQUIRED';
+    setField('sslMode', next);
+  };
+
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={styles.sectionHint}>
+        Connect directly to your MySQL server. Credentials stay on this device (SecureStore).
+      </Text>
+
+      <Field label="Host" value={draft.host} onChangeText={v => setField('host', v)} placeholder="db.example.com" />
+      <Field
+        label="Port"
+        value={String(draft.port)}
+        onChangeText={v => setField('port', parseInt(v, 10) || 0)}
+        placeholder="3306"
+        keyboardType="numeric"
+      />
+      <Field label="Database" value={draft.database} onChangeText={v => setField('database', v)} placeholder="keynest" />
+      <Field label="User" value={draft.user} onChangeText={v => setField('user', v)} placeholder="keynest" />
+      <Field label="Password" value={draft.password} onChangeText={v => setField('password', v)} secureTextEntry placeholder="password" />
+
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Require SSL</Text>
+        <Switch
+          value={draft.sslMode === 'REQUIRED'}
+          onValueChange={toggleSsl}
+          trackColor={{ false: Colors.border, true: Colors.primaryDim }}
+          thumbColor={draft.sslMode === 'REQUIRED' ? Colors.primary : Colors.textMuted}
+        />
+      </View>
+
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Auto-sync on launch</Text>
+        <Switch
+          value={draft.autoSync !== false}
+          onValueChange={v => setField('autoSync', v)}
+          trackColor={{ false: Colors.border, true: Colors.primaryDim }}
+          thumbColor={draft.autoSync !== false ? Colors.primary : Colors.textMuted}
+        />
+      </View>
+
+      {testMsg?.kind === 'err' ? <Text style={styles.error}>{testMsg.text}</Text> : null}
+      {testMsg?.kind === 'ok' ? <Text style={styles.success}>{testMsg.text}</Text> : null}
+      {saveMsg ? <Text style={styles.success}>{saveMsg}</Text> : null}
+      {syncError ? <Text style={styles.error}>{syncError}</Text> : null}
+
+      <Text style={styles.metaLine}>Last sync: {formatWhen(lastSyncAt)}</Text>
+
+      <View style={styles.btnRow}>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnSecondary, testing && styles.btnDisabled]}
+          onPress={onTest}
+          disabled={testing}
+        >
+          <Text style={[styles.btnText, { color: Colors.text }]}>{testing ? 'Testing...' : 'Test'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnPrimary, testing && styles.btnDisabled]}
+          onPress={onSave}
+          disabled={testing}
+        >
+          <Text style={styles.btnText}>Save</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.btnRow}>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnSecondary, (isSyncing || !mysqlConfig) && styles.btnDisabled]}
+          onPress={onSyncNow}
+          disabled={isSyncing || !mysqlConfig}
+        >
+          <Text style={[styles.btnText, { color: Colors.text }]}>{isSyncing ? 'Syncing...' : 'Sync now'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnDanger, !mysqlConfig && styles.btnDisabled]}
+          onPress={onClear}
+          disabled={!mysqlConfig}
+        >
+          <Text style={[styles.btnText, { color: Colors.danger }]}>Clear</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -155,12 +347,18 @@ const styles = StyleSheet.create({
   sectionHint: { fontSize: 13, color: Colors.textSecondary },
   error: { color: Colors.danger, fontSize: 13 },
   success: { color: Colors.accent, fontSize: 13 },
+  metaLine: { color: Colors.textMuted, fontSize: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rowLabel: { color: Colors.text, fontSize: 14 },
+  btnRow: { flexDirection: 'row', gap: 8 },
   btn: {
     flex: 1, flexDirection: 'row', height: 44,
     borderRadius: Colors.radiusSm, alignItems: 'center', justifyContent: 'center',
   },
   btnPrimary: { backgroundColor: Colors.primary },
+  btnSecondary: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   btnDanger: { borderWidth: 1, borderColor: Colors.danger },
+  btnDisabled: { opacity: 0.5 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   footer: { alignItems: 'center', gap: 4, marginTop: 16 },
   footerText: { fontSize: 12, color: Colors.textMuted },

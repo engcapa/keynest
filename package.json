@@ -59,6 +59,7 @@
     "@types/express": "^4.17.25",
     "@types/node": "^20.19.40",
     "@types/react": "~18.3.12",
+    "expo-build-properties": "^0.13.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

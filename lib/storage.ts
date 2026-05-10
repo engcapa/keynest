@@ -5,6 +5,19 @@ import type { OTPAccount } from './otp';
 
 const ACCOUNTS_KEY = 'mfa_vault_accounts';
 const PASSWORD_KEY = 'mfa_vault_password';
+const MYSQL_CFG_KEY = 'mfa_vault_mysql_cfg';
+
+export type MysqlSslMode = 'REQUIRED' | 'DISABLED';
+
+export interface MysqlConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  sslMode?: MysqlSslMode;
+  autoSync?: boolean;
+}
 
 async function secureGet(key: string): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -80,4 +93,44 @@ export async function verifyPassword(password: string): Promise<boolean> {
   if (!stored) return true;
   const hash = await hashPassword(password);
   return hash === stored;
+}
+
+export async function getMysqlConfig(): Promise<MysqlConfig | null> {
+  const raw = await secureGet(MYSQL_CFG_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.host !== 'string' || !parsed.host) return null;
+    if (typeof parsed.database !== 'string' || !parsed.database) return null;
+    if (typeof parsed.user !== 'string') return null;
+    return {
+      host: parsed.host,
+      port: Number.isFinite(parsed.port) ? parsed.port : 3306,
+      user: parsed.user,
+      password: typeof parsed.password === 'string' ? parsed.password : '',
+      database: parsed.database,
+      sslMode: parsed.sslMode === 'DISABLED' ? 'DISABLED' : 'REQUIRED',
+      autoSync: parsed.autoSync !== false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setMysqlConfig(cfg: MysqlConfig): Promise<void> {
+  const normalized: MysqlConfig = {
+    host: cfg.host.trim(),
+    port: Number.isFinite(cfg.port) && cfg.port > 0 ? Math.floor(cfg.port) : 3306,
+    user: cfg.user.trim(),
+    password: cfg.password,
+    database: cfg.database.trim(),
+    sslMode: cfg.sslMode === 'DISABLED' ? 'DISABLED' : 'REQUIRED',
+    autoSync: cfg.autoSync !== false,
+  };
+  await secureSet(MYSQL_CFG_KEY, JSON.stringify(normalized));
+}
+
+export async function clearMysqlConfig(): Promise<void> {
+  await secureDelete(MYSQL_CFG_KEY);
 }

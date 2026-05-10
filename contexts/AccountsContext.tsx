@@ -1,10 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
-import { loadAccounts, saveAccounts } from '@/lib/storage';
-import { apiRequest, getApiUrl } from '@/lib/query-client';
+import { loadAccounts, saveAccounts, getMysqlConfig, setMysqlConfig, clearMysqlConfig } from '@/lib/storage';
+import type { MysqlConfig } from '@/lib/storage';
+import { apiRequest } from '@/lib/query-client';
+import {
+  fetchAccountsFromMysql,
+  pushAccountToMysql,
+  deleteAccountFromMysql,
+  isMysqlDirectSupported,
+} from '@/lib/mysql-client';
 import type { OTPAccount } from '@/lib/otp';
 
 export type SortBy = 'name' | 'issuer' | 'createdAt';
+type SyncStrategy = 'none' | 'web-http' | 'android-jdbc';
 
 interface AccountsContextType {
   accounts: OTPAccount[];
@@ -21,6 +29,11 @@ interface AccountsContextType {
   syncWithRemote: () => Promise<void>;
   isSyncing: boolean;
   syncError: string | null;
+  lastSyncAt: string | null;
+  mysqlConfig: MysqlConfig | null;
+  saveMysqlConfig: (cfg: MysqlConfig) => Promise<void>;
+  removeMysqlConfig: () => Promise<void>;
+  syncStrategy: SyncStrategy;
 }
 
 const AccountsContext = createContext<AccountsContextType | null>(null);
@@ -34,13 +47,39 @@ function sortAccounts(list: OTPAccount[], sortBy: SortBy): OTPAccount[] {
   });
 }
 
-async function probeSyncAvailable(): Promise<boolean> {
+async function probeWebSync(): Promise<boolean> {
   try {
     const res = await apiRequest('GET', '/api/settings/status') as { dbConfigured?: boolean };
     return !!res?.dbConfigured;
   } catch {
     return false;
   }
+}
+
+function migrateLocal(list: OTPAccount[]): OTPAccount[] {
+  return list.map(a => ({ ...a, pinned: a.pinned ?? false }));
+}
+
+export function mergeById(local: OTPAccount[], remote: OTPAccount[]): {
+  merged: OTPAccount[];
+  toPush: OTPAccount[];
+} {
+  const byId = new Map<string, OTPAccount>();
+  for (const a of remote) byId.set(a.id, a);
+  const toPush: OTPAccount[] = [];
+  for (const l of local) {
+    const r = byId.get(l.id);
+    if (!r) {
+      byId.set(l.id, l);
+      toPush.push(l);
+      continue;
+    }
+    if ((l.updatedAt ?? '') > (r.updatedAt ?? '')) {
+      byId.set(l.id, l);
+      toPush.push(l);
+    }
+  }
+  return { merged: [...byId.values()], toPush };
 }
 
 export function AccountsProvider({ children }: { children: React.ReactNode }) {
@@ -50,119 +89,188 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const syncAvailableRef = useRef(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [mysqlConfig, setMysqlConfigState] = useState<MysqlConfig | null>(null);
+
+  const webSyncAvailableRef = useRef(false);
+  const accountsRef = useRef<OTPAccount[]>([]);
+  useEffect(() => { accountsRef.current = accounts; }, [accounts]);
+
+  const canJdbc = Platform.OS === 'android' && isMysqlDirectSupported();
+
+  const syncStrategy: SyncStrategy =
+    canJdbc && mysqlConfig ? 'android-jdbc' :
+    Platform.OS === 'web' && webSyncAvailableRef.current ? 'web-http' :
+    'none';
 
   useEffect(() => {
     (async () => {
-      syncAvailableRef.current = await probeSyncAvailable();
-      await loadLocal();
+      setIsLoading(true);
+      try {
+        const local = migrateLocal(await loadAccounts());
+        setAccounts(local);
+
+        if (Platform.OS === 'web') {
+          webSyncAvailableRef.current = await probeWebSync();
+          if (webSyncAvailableRef.current) {
+            try {
+              const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
+              if (Array.isArray(remote)) {
+                setAccounts(migrateLocal(remote));
+              }
+            } catch { /* offline */ }
+          }
+          return;
+        }
+
+        if (canJdbc) {
+          const cfg = await getMysqlConfig();
+          setMysqlConfigState(cfg);
+          if (cfg && cfg.autoSync !== false) {
+            await runJdbcSync(cfg, local);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadLocal = async () => {
-    setIsLoading(true);
+  const runJdbcSync = async (cfg: MysqlConfig, localBase: OTPAccount[]): Promise<void> => {
+    setIsSyncing(true);
+    setSyncError(null);
     try {
-      const local = await loadAccounts();
-      const migrated = local.map(a => ({ ...a, pinned: a.pinned ?? false }));
-      setAccounts(migrated);
-      if (Platform.OS === 'web') {
-        await syncFromRemote();
+      const remote = await fetchAccountsFromMysql(cfg);
+      const { merged, toPush } = mergeById(localBase, remote);
+      const normalized = migrateLocal(merged);
+      setAccounts(normalized);
+      await saveAccounts(normalized);
+      for (const a of toPush) {
+        try { await pushAccountToMysql(cfg, a); } catch { /* best-effort */ }
       }
+      setLastSyncAt(new Date().toISOString());
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Sync failed');
     } finally {
-      setIsLoading(false);
+      setIsSyncing(false);
     }
   };
 
-  const syncFromRemote = async () => {
-    if (!syncAvailableRef.current) return;
-    try {
-      const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
-      if (Array.isArray(remote)) {
-        const migrated = remote.map(a => ({ ...a, pinned: a.pinned ?? false }));
-        setAccounts(migrated);
-        if (Platform.OS !== 'web') {
-          await saveAccounts(migrated);
-        }
-      }
-    } catch {
-      // offline - keep local
-    }
-  };
-
-  const persist = async (updated: OTPAccount[]) => {
+  const persistLocal = async (updated: OTPAccount[]) => {
     setAccounts(updated);
     if (Platform.OS !== 'web') {
       await saveAccounts(updated);
     }
   };
 
-  const pushToRemote = async (account: OTPAccount, method: 'POST' | 'PUT', path: string) => {
-    if (!syncAvailableRef.current) return;
-    try {
-      await apiRequest(method, path, account);
-    } catch {
-      // offline - ignore
+  const pushMutation = async (kind: 'upsert' | 'delete', payload: OTPAccount | string) => {
+    if (syncStrategy === 'android-jdbc' && mysqlConfig) {
+      try {
+        if (kind === 'upsert') await pushAccountToMysql(mysqlConfig, payload as OTPAccount);
+        else await deleteAccountFromMysql(mysqlConfig, payload as string);
+      } catch { /* best-effort */ }
+      return;
+    }
+    if (syncStrategy === 'web-http') {
+      try {
+        if (kind === 'upsert') {
+          const acc = payload as OTPAccount;
+          await apiRequest('POST', '/api/accounts', acc);
+        } else {
+          await apiRequest('DELETE', `/api/accounts/${payload as string}`);
+        }
+      } catch { /* offline */ }
     }
   };
 
   const addAccount = useCallback(async (account: OTPAccount) => {
     const withPin = { ...account, pinned: account.pinned ?? false };
-    const updated = [...accounts, withPin];
-    await persist(updated);
-    await pushToRemote(withPin, 'POST', '/api/accounts');
-  }, [accounts]);
+    const updated = [...accountsRef.current, withPin];
+    await persistLocal(updated);
+    await pushMutation('upsert', withPin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStrategy, mysqlConfig]);
 
   const updateAccount = useCallback(async (id: string, updates: Partial<OTPAccount>) => {
-    const updated = accounts.map(a => a.id === id
+    const updated = accountsRef.current.map(a => a.id === id
       ? { ...a, ...updates, updatedAt: new Date().toISOString() }
       : a
     );
-    await persist(updated);
+    await persistLocal(updated);
     const found = updated.find(a => a.id === id);
-    if (found) await pushToRemote(found, 'PUT', `/api/accounts/${id}`);
-  }, [accounts]);
+    if (found) await pushMutation('upsert', found);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStrategy, mysqlConfig]);
 
   const deleteAccount = useCallback(async (id: string) => {
-    const updated = accounts.filter(a => a.id !== id);
-    await persist(updated);
-    if (!syncAvailableRef.current) return;
-    try {
-      await apiRequest('DELETE', `/api/accounts/${id}`);
-    } catch { /* offline */ }
-  }, [accounts]);
+    const updated = accountsRef.current.filter(a => a.id !== id);
+    await persistLocal(updated);
+    await pushMutation('delete', id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStrategy, mysqlConfig]);
 
   const togglePin = useCallback(async (id: string) => {
-    const updated = accounts.map(a =>
+    const updated = accountsRef.current.map(a =>
       a.id === id ? { ...a, pinned: !a.pinned, updatedAt: new Date().toISOString() } : a
     );
-    await persist(updated);
+    await persistLocal(updated);
     const found = updated.find(a => a.id === id);
-    if (found) await pushToRemote(found, 'PUT', `/api/accounts/${id}`);
-  }, [accounts]);
+    if (found) await pushMutation('upsert', found);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStrategy, mysqlConfig]);
 
   const syncWithRemote = useCallback(async () => {
+    if (canJdbc) {
+      const cfg = mysqlConfig ?? await getMysqlConfig();
+      if (!cfg) {
+        setSyncError('No MySQL config saved');
+        return;
+      }
+      if (!mysqlConfig) setMysqlConfigState(cfg);
+      await runJdbcSync(cfg, accountsRef.current);
+      return;
+    }
+
+    // Web fallback: original behavior
     setIsSyncing(true);
     setSyncError(null);
     try {
-      if (!syncAvailableRef.current) {
-        // retry probe in case the server came online after initial load
-        syncAvailableRef.current = await probeSyncAvailable();
+      if (!webSyncAvailableRef.current) {
+        webSyncAvailableRef.current = await probeWebSync();
       }
-      if (!syncAvailableRef.current) {
+      if (!webSyncAvailableRef.current) {
         setSyncError('Remote sync not configured on the server');
         return;
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        const migrated = remote.map(a => ({ ...a, pinned: a.pinned ?? false }));
+        const migrated = migrateLocal(remote);
         setAccounts(migrated);
         await saveAccounts(migrated);
+        setLastSyncAt(new Date().toISOString());
       }
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
     } finally {
       setIsSyncing(false);
     }
+  }, [canJdbc, mysqlConfig]);
+
+  const saveMysqlConfig = useCallback(async (cfg: MysqlConfig) => {
+    await setMysqlConfig(cfg);
+    setMysqlConfigState(cfg);
+    if (canJdbc && cfg.autoSync !== false) {
+      await runJdbcSync(cfg, accountsRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canJdbc]);
+
+  const removeMysqlConfig = useCallback(async () => {
+    await clearMysqlConfig();
+    setMysqlConfigState(null);
+    setLastSyncAt(null);
+    setSyncError(null);
   }, []);
 
   const filteredAccounts = React.useMemo(() => {
@@ -186,7 +294,9 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       setSearchQuery, setSortBy,
       addAccount, updateAccount, deleteAccount,
       togglePin,
-      syncWithRemote, isSyncing, syncError,
+      syncWithRemote, isSyncing, syncError, lastSyncAt,
+      mysqlConfig, saveMysqlConfig, removeMysqlConfig,
+      syncStrategy,
     }}>
       {children}
     </AccountsContext.Provider>
