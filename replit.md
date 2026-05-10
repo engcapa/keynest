@@ -1,4 +1,4 @@
-# MFA Vault
+# Key Nest
 
 A multi-factor authentication (MFA) authenticator app that works as both an Android/mobile app (Expo) and a web application.
 

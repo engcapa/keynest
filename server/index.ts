@@ -40,8 +40,8 @@ app.get('/', (_, res) => {
     </head>
     <body>
       <div class="card">
-        <h1>🔐 MFA Vault API</h1>
-        <p>Backend server for MFA Vault authenticator app</p>
+        <h1>🔐 Key Nest API</h1>
+        <p>Backend server for Key Nest authenticator app</p>
         <span class="badge">Running on port 3000</span>
         <ul style="margin-top: 24px">
           <li>GET /api/accounts — list all accounts</li>

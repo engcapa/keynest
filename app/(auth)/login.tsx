@@ -72,7 +72,7 @@ export default function LoginScreen() {
           <View style={styles.logoCircle}>
             <Ionicons name="shield-checkmark" size={42} color={Colors.primary} />
           </View>
-          <Text style={styles.appName}>MFA Vault</Text>
+          <Text style={styles.appName}>Key Nest</Text>
           <Text style={styles.subtitle}>
             {hasPassword ? 'Enter your password to unlock' : 'Create a password to protect your codes'}
           </Text>

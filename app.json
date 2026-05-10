@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "MFA Vault",
-    "slug": "mfa-vault",
+    "name": "Key Nest",
+    "slug": "key-nest",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mfavault",
+    "scheme": "keynest",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/images/icon.png",
@@ -38,7 +38,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow MFA Vault to access your camera to scan QR codes."
+          "cameraPermission": "Allow Key Nest to access your camera to scan QR codes."
         }
       ]
     ],

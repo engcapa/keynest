@@ -188,7 +188,7 @@ export default function SettingsScreen() {
       </Section>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>MFA Vault v1.0</Text>
+        <Text style={styles.footerText}>Key Nest v1.0</Text>
         <Text style={styles.footerText}>Supports TOTP · HOTP · SHA1 · SHA256 · SHA512</Text>
       </View>
     </ScrollView>

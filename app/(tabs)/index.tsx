@@ -46,7 +46,7 @@ export default function AccountsScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>MFA Vault</Text>
+          <Text style={styles.title}>Key Nest</Text>
           <Text style={styles.count}>{filteredAccounts.length} account{filteredAccounts.length !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.headerActions}>
