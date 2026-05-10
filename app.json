@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "MFA Vault",
+    "slug": "mfa-vault",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mfavault",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0B14"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mfavault.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used to scan QR codes for adding authenticator accounts."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0A0B14"
+      },
+      "package": "com.mfavault.app",
+      "permissions": ["CAMERA"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MFA Vault to access your camera to scan QR codes."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

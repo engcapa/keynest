@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "kQs18P5uQ04ctcbxRp5rv"
+uri = "file://assets/images/icon.png"
+type = "image"
+title = "generated_image"
