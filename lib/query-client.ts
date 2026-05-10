@@ -6,7 +6,11 @@ const SERVER_PORT = 3000;
 export function getApiUrl(): string {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined') {
-      return `${window.location.protocol}//${window.location.hostname}:${SERVER_PORT}`;
+      const { protocol, hostname, port } = window.location;
+      if (port && port !== '8081') {
+        return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+      }
+      return `${protocol}//${hostname}:${SERVER_PORT}`;
     }
     return `http://localhost:${SERVER_PORT}`;
   }

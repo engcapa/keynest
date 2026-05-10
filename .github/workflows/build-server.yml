@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build web app
+        run: npx expo export --platform web
+
       - name: Compile TypeScript
         run: npx tsc --project tsconfig.server.json
 
