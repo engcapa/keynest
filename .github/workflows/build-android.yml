@@ -71,16 +71,22 @@ jobs:
         run: |
           # The default template uses -Xmx2048m which is not enough for
           # expo-modules-core's KSP+Kotlin compile on ubuntu-latest (7 GB).
-          # Also pin Kotlin to 1.9.25: expo-modules-core's Compose Compiler
-          # 1.5.15 requires 1.9.25, but the SDK 52 template defaults to 1.9.24
-          # which fails the Compose-Kotlin compatibility check.
+          #
+          # Pin Kotlin to 1.9.24 to match the version shipped by
+          # @react-native/gradle-plugin (gradle/libs.versions.toml: kotlin = "1.9.24"),
+          # which is what actually drives the kotlin-gradle-plugin classpath.
+          # The SDK 52 bare template's `android.kotlinVersion` only affects
+          # expo-modules-core's ext.kotlinVersion (used to pick the Compose
+          # Compiler extension). With 1.9.24 it resolves to Compose Compiler 1.5.14,
+          # which matches the actual Kotlin compiler version and clears the
+          # "Compose Compiler requires Kotlin version 1.9.25" error.
           sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d; /^android\.kotlinVersion=/d' gradle.properties
           cat >> gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
           org.gradle.workers.max=2
           kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m
           reactNativeArchitectures=arm64-v8a
-          android.kotlinVersion=1.9.25
+          android.kotlinVersion=1.9.24
           EOF
           echo "--- final gradle.properties ---"
           cat gradle.properties
