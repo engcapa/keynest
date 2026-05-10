@@ -77,6 +77,9 @@ Example file:
 {
   "port": 3000,
   "host": "0.0.0.0",
+  "auth": {
+    "passwordHash": null
+  },
   "database": {
     "host": "127.0.0.1",
     "port": 3306,
@@ -91,11 +94,20 @@ Example file:
 |---|---|---|
 | `port` | `3000` | Port the Express server listens on |
 | `host` | `0.0.0.0` | Bind address (`127.0.0.1` to restrict to localhost) |
+| `auth.passwordHash` | `null` | SHA-256 hash of the app password for web login. Leave `null` on first run — the web UI prompts the first visitor to set one, and the server writes the hash back into this file. |
 | `database.host` | — | MySQL host (required to enable sync) |
 | `database.port` | `3306` | MySQL port |
 | `database.name` | — | Database name (required) |
 | `database.user` | — | MySQL user (required) |
 | `database.password` | `""` | MySQL password |
+
+**Web login flow.** When the web app is served from the Express server, login is enforced server-side:
+
+1. On first visit, if `auth.passwordHash` is `null`, the UI shows a setup screen. The password is hashed client-side (SHA-256) and sent to `POST /api/auth/setup`, which persists the hash to `keynest.config.json`.
+2. Subsequent visitors hit the login screen and authenticate via `POST /api/auth/login`. The server returns a bearer token (7-day TTL, kept in memory only) that the client stores in `sessionStorage` and sends as `Authorization: Bearer <token>` on every API call.
+3. To reset the password, stop the server, delete the `auth.passwordHash` field (or set it to `null`), and restart — the next visitor re-runs the setup flow. To change it while logged in, use the Settings screen (calls `POST /api/auth/change`).
+
+The Android app manages its password locally via expo-secure-store and does not use these endpoints.
 
 **Config file lookup order** (highest priority first):
 
