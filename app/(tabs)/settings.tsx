@@ -10,6 +10,10 @@ import { Tooltip } from '@/components/Tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccounts } from '@/contexts/AccountsContext';
 import type { MysqlConfig, MysqlSslMode } from '@/lib/storage';
+import {
+  getIdleLockMinutes, setIdleLockMinutes,
+  IDLE_LOCK_OPTIONS, DEFAULT_IDLE_LOCK_MINUTES,
+} from '@/lib/storage';
 import { testMysqlConnection } from '@/lib/mysql-client';
 
 const DEFAULT_MYSQL: MysqlConfig = {
@@ -35,11 +39,18 @@ function formatWhen(iso: string | null): string {
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { logout, changePassword } = useAuth();
+  const { logout, changePassword, isAnonymous } = useAuth();
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
+  const [idleMinutes, setIdleMinutes] = useState<number>(DEFAULT_IDLE_LOCK_MINUTES);
+
+  useEffect(() => {
+    (async () => {
+      setIdleMinutes(await getIdleLockMinutes());
+    })();
+  }, []);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -86,21 +97,58 @@ export default function SettingsScreen() {
           <Text style={styles.hint}>
             Remote MySQL sync is configured on the server by your administrator. When enabled, this app
             automatically syncs accounts with the remote database. No client-side setup is required.
+            {'\n\n'}
+            The web password is managed by the server. To preset it, write `auth.passwordHash` into
+            `keynest.config.json`; otherwise the first visitor is prompted to create one.
           </Text>
         )}
       </Section>
 
       <Section title="Security">
-        <Text style={styles.sectionHint}>Change your app password</Text>
-        <Field label="Current Password" value={oldPassword} onChangeText={setOldPassword} secureTextEntry placeholder="Current password" />
-        <Field label="New Password" value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (min 4 chars)" />
-        {pwError ? <Text style={styles.error}>{pwError}</Text> : null}
-        {pwSuccess ? <Text style={styles.success}>Password changed successfully</Text> : null}
-        <Tooltip label="Save your new password">
-          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleChangePassword} accessibilityRole="button" accessibilityLabel="Change password">
-            <Text style={styles.btnText}>Change Password</Text>
-          </TouchableOpacity>
-        </Tooltip>
+        {isAnonymous ? (
+          <Text style={styles.hint}>
+            Offline mode — no password is set on this device. Your accounts are kept locally only.
+            Lock this session from the Session card below, or log in with a password to enable auto-lock and remote sync.
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.sectionHint}>Change your app password</Text>
+            <Field label="Current Password" value={oldPassword} onChangeText={setOldPassword} secureTextEntry placeholder="Current password" />
+            <Field label="New Password" value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (min 4 chars)" />
+            {pwError ? <Text style={styles.error}>{pwError}</Text> : null}
+            {pwSuccess ? <Text style={styles.success}>Password changed successfully</Text> : null}
+            <Tooltip label="Save your new password">
+              <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleChangePassword} accessibilityRole="button" accessibilityLabel="Change password">
+                <Text style={styles.btnText}>Change Password</Text>
+              </TouchableOpacity>
+            </Tooltip>
+
+            <View style={{ height: 8 }} />
+            <Text style={styles.sectionHint}>Auto-lock when idle</Text>
+            <View style={styles.chipRow}>
+              {IDLE_LOCK_OPTIONS.map(m => {
+                const active = idleMinutes === m;
+                const label = m === 0 ? 'Never' : `${m} min`;
+                return (
+                  <Tooltip key={m} label={m === 0 ? 'Disable auto-lock' : `Lock after ${m} minute${m === 1 ? '' : 's'} of inactivity`}>
+                    <TouchableOpacity
+                      style={[styles.chip, active && styles.chipActive]}
+                      onPress={async () => {
+                        setIdleMinutes(m);
+                        await setIdleLockMinutes(m);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={label}
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  </Tooltip>
+                );
+              })}
+            </View>
+          </>
+        )}
       </Section>
 
       <Section title="Session">
@@ -392,4 +440,13 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   footer: { alignItems: 'center', gap: 4, marginTop: 16 },
   footerText: { fontSize: 12, color: Colors.textMuted },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  chipActive: { backgroundColor: Colors.primaryDim, borderColor: Colors.primary },
+  chipText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  chipTextActive: { color: Colors.primary },
 });

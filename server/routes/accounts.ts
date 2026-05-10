@@ -25,6 +25,7 @@ router.get('/', async (req: Request, res: Response) => {
     }));
     res.json(accounts);
   } catch (e: any) {
+    console.error('[accounts.GET]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -43,6 +44,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
     res.status(201).json({ ok: true });
   } catch (e: any) {
+    console.error('[accounts.POST]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -58,6 +60,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     );
     res.json({ ok: true });
   } catch (e: any) {
+    console.error('[accounts.PUT]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -69,6 +72,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await pool.execute('DELETE FROM mfa_accounts WHERE id=?', [req.params.id]);
     res.status(204).send();
   } catch (e: any) {
+    console.error('[accounts.DELETE]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

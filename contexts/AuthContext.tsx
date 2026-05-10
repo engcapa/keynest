@@ -1,20 +1,41 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Platform } from 'react-native';
-import { getPasswordHash, setPasswordHash, hashPassword, verifyPassword } from '@/lib/storage';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { AppState, Platform } from 'react-native';
+import { getPasswordHash, setPasswordHash, hashPassword, verifyPassword, getIdleLockMinutes, subscribeIdleLockMinutes } from '@/lib/storage';
 import { apiRequest, getAuthToken, setAuthToken } from '@/lib/query-client';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   hasPassword: boolean;
   isLoading: boolean;
+  isAnonymous: boolean;
   login: (password: string) => Promise<boolean>;
   logout: () => void;
   setupPassword: (password: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<boolean>;
+  loginAnonymous: () => void;
   authBackend: 'local' | 'server';
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const ANON_STORAGE_KEY = 'mfa_vault_anon';
+
+function getWebFlag(key: string): boolean {
+  if (Platform.OS !== 'web') return false;
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage.getItem(key) === '1';
+  } catch { /* ignore */ }
+  return false;
+}
+
+function setWebFlag(key: string, value: boolean): void {
+  if (Platform.OS !== 'web') return;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (value) localStorage.setItem(key, '1');
+      else localStorage.removeItem(key);
+    }
+  } catch { /* ignore */ }
+}
 
 async function fetchServerStatus(): Promise<{ hasPassword: boolean } | null> {
   try {
@@ -39,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasPassword, setHasPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [authBackend, setAuthBackend] = useState<'local' | 'server'>(
     Platform.OS === 'web' ? 'server' : 'local'
   );
@@ -46,6 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       if (Platform.OS === 'web') {
+        if (getWebFlag(ANON_STORAGE_KEY)) {
+          setIsAnonymous(true);
+          setAuthBackend('local');
+          setHasPassword(false);
+          setIsAuthenticated(true);
+          setIsLoading(false);
+          return;
+        }
         const status = await fetchServerStatus();
         if (status) {
           setAuthBackend('server');
@@ -75,6 +105,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const res = await apiRequest('POST', '/api/auth/login', { passwordHash }) as { token: string };
         if (res?.token) {
           setAuthToken(res.token);
+          setWebFlag(ANON_STORAGE_KEY, false);
+          setIsAnonymous(false);
           setIsAuthenticated(true);
           return true;
         }
@@ -84,28 +116,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     const ok = await verifyPassword(password);
-    if (ok) setIsAuthenticated(true);
+    if (ok) {
+      setWebFlag(ANON_STORAGE_KEY, false);
+      setIsAnonymous(false);
+      setIsAuthenticated(true);
+    }
     return ok;
   }, [authBackend]);
 
   const logout = useCallback(() => {
-    if (authBackend === 'server') {
+    if (authBackend === 'server' && !isAnonymous) {
       apiRequest('POST', '/api/auth/logout').catch(() => {});
       setAuthToken(null);
     }
+    setWebFlag(ANON_STORAGE_KEY, false);
+    setIsAnonymous(false);
     setIsAuthenticated(false);
-  }, [authBackend]);
+  }, [authBackend, isAnonymous]);
+
+  const loginAnonymous = useCallback(() => {
+    setWebFlag(ANON_STORAGE_KEY, true);
+    setIsAnonymous(true);
+    setAuthBackend('local');
+    setHasPassword(false);
+    setIsAuthenticated(true);
+  }, []);
 
   const setupPassword = useCallback(async (password: string) => {
     const passwordHash = await hashPassword(password);
     if (authBackend === 'server') {
       const res = await apiRequest('POST', '/api/auth/setup', { passwordHash }) as { token: string };
       if (res?.token) setAuthToken(res.token);
+      setWebFlag(ANON_STORAGE_KEY, false);
+      setIsAnonymous(false);
       setHasPassword(true);
       setIsAuthenticated(true);
       return;
     }
     await setPasswordHash(passwordHash);
+    setWebFlag(ANON_STORAGE_KEY, false);
+    setIsAnonymous(false);
     setHasPassword(true);
     setIsAuthenticated(true);
   }, [authBackend]);
@@ -127,10 +177,108 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [authBackend]);
 
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
+  const idleMinutesRef = useRef<number>(5);
+  const logoutRef = useRef(logout);
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
+
+  useEffect(() => {
+    const enabled = isAuthenticated && !isAnonymous;
+    let cancelled = false;
+
+    const clearTimer = () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+
+    const scheduleLock = () => {
+      clearTimer();
+      const minutes = idleMinutesRef.current;
+      if (!enabled || !minutes || minutes <= 0) return;
+      idleTimerRef.current = setTimeout(() => {
+        logoutRef.current();
+      }, minutes * 60 * 1000);
+    };
+
+    const resetActivity = () => {
+      lastActivityRef.current = Date.now();
+      scheduleLock();
+    };
+
+    (async () => {
+      idleMinutesRef.current = await getIdleLockMinutes();
+      if (cancelled) return;
+      scheduleLock();
+    })();
+
+    const unsubMinutes = subscribeIdleLockMinutes((m) => {
+      idleMinutesRef.current = m;
+      scheduleLock();
+    });
+
+    let removeWeb: (() => void) | null = null;
+    let appStateSub: { remove: () => void } | null = null;
+
+    if (enabled) {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        let lastReset = 0;
+        const throttledReset = () => {
+          const now = Date.now();
+          if (now - lastReset < 30_000) return;
+          lastReset = now;
+          resetActivity();
+        };
+        const onVisibility = () => {
+          if (document.visibilityState !== 'visible') return;
+          const minutes = idleMinutesRef.current;
+          if (minutes > 0 && Date.now() - lastActivityRef.current >= minutes * 60 * 1000) {
+            logoutRef.current();
+          } else {
+            resetActivity();
+          }
+        };
+        window.addEventListener('mousemove', throttledReset, { passive: true });
+        window.addEventListener('keydown', throttledReset);
+        window.addEventListener('touchstart', throttledReset, { passive: true });
+        document.addEventListener('visibilitychange', onVisibility);
+        removeWeb = () => {
+          window.removeEventListener('mousemove', throttledReset);
+          window.removeEventListener('keydown', throttledReset);
+          window.removeEventListener('touchstart', throttledReset);
+          document.removeEventListener('visibilitychange', onVisibility);
+        };
+      } else {
+        appStateSub = AppState.addEventListener('change', (state) => {
+          if (state === 'active') {
+            const minutes = idleMinutesRef.current;
+            if (minutes > 0 && Date.now() - lastActivityRef.current >= minutes * 60 * 1000) {
+              logoutRef.current();
+            } else {
+              resetActivity();
+            }
+          } else if (state === 'background' || state === 'inactive') {
+            lastActivityRef.current = Date.now();
+          }
+        });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+      clearTimer();
+      unsubMinutes();
+      if (removeWeb) removeWeb();
+      if (appStateSub) appStateSub.remove();
+    };
+  }, [isAuthenticated, isAnonymous]);
+
   return (
     <AuthContext.Provider value={{
-      isAuthenticated, hasPassword, isLoading,
-      login, logout, setupPassword, changePassword,
+      isAuthenticated, hasPassword, isLoading, isAnonymous,
+      login, logout, setupPassword, changePassword, loginAnonymous,
       authBackend,
     }}>
       {children}

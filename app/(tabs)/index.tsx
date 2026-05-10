@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, ActivityIndicator,
-  Platform, Alert,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -20,32 +20,12 @@ const SORT_OPTIONS: { label: string; value: SortBy }[] = [
   { label: 'Added', value: 'createdAt' },
 ];
 
-function confirm(title: string, message: string): Promise<boolean> {
-  if (Platform.OS === 'web') {
-    return Promise.resolve(typeof window !== 'undefined' ? window.confirm(`${title}\n\n${message}`) : false);
-  }
-  return new Promise(resolve => {
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Continue', onPress: () => resolve(true) },
-    ]);
-  });
-}
-
-function notify(message: string) {
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined') window.alert(message);
-    return;
-  }
-  Alert.alert('Save Remote', message);
-}
-
 export default function AccountsScreen() {
   const insets = useSafeAreaInsets();
   const {
-    filteredAccounts, accounts, isLoading,
+    filteredAccounts, isLoading,
     searchQuery, sortBy, setSearchQuery, setSortBy,
-    syncWithRemote, pushAllToRemote, isSyncing,
+    syncWithRemote, isSyncing,
   } = useAccounts();
   const [showSort, setShowSort] = useState(false);
 
@@ -60,23 +40,6 @@ export default function AccountsScreen() {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await syncWithRemote();
   }, [syncWithRemote]);
-
-  const handlePushAll = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (accounts.length === 0) {
-      notify('Nothing to push — your local vault is empty.');
-      return;
-    }
-    const ok = await confirm(
-      'Save to remote?',
-      `Upload all ${accounts.length} local account${accounts.length !== 1 ? 's' : ''} to the remote database. Existing rows with the same id will be overwritten.`
-    );
-    if (!ok) return;
-    const result = await pushAllToRemote();
-    if (result) {
-      notify(`Pushed ${result.pushed} account${result.pushed !== 1 ? 's' : ''}${result.failed ? `, ${result.failed} failed` : ''}.`);
-    }
-  }, [accounts.length, pushAllToRemote]);
 
   const renderItem = useCallback(({ item }: { item: OTPAccount }) => (
     <AccountCard account={item} />
@@ -105,18 +68,6 @@ export default function AccountsScreen() {
                 ? <ActivityIndicator size="small" color={Colors.primary} />
                 : <Ionicons name="cloud-download-outline" size={22} color={Colors.textSecondary} />
               }
-            </TouchableOpacity>
-          </Tooltip>
-          <Tooltip label="Save all to remote (push up)">
-            <TouchableOpacity
-              onPress={handlePushAll}
-              style={styles.headerBtn}
-              hitSlop={8}
-              disabled={isSyncing}
-              accessibilityRole="button"
-              accessibilityLabel="Save all to remote"
-            >
-              <Ionicons name="cloud-upload-outline" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
           </Tooltip>
           <Tooltip label="Add new account">
