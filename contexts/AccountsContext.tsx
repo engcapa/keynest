@@ -27,6 +27,7 @@ interface AccountsContextType {
   deleteAccount: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   syncWithRemote: () => Promise<void>;
+  pushAllToRemote: () => Promise<{ pushed: number; failed: number } | null>;
   isSyncing: boolean;
   syncError: string | null;
   lastSyncAt: string | null;
@@ -34,6 +35,7 @@ interface AccountsContextType {
   saveMysqlConfig: (cfg: MysqlConfig) => Promise<void>;
   removeMysqlConfig: () => Promise<void>;
   syncStrategy: SyncStrategy;
+  canSyncRemote: boolean;
 }
 
 const AccountsContext = createContext<AccountsContextType | null>(null);
@@ -257,6 +259,50 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [canJdbc, mysqlConfig]);
 
+  const pushAllToRemote = useCallback(async (): Promise<{ pushed: number; failed: number } | null> => {
+    const local = accountsRef.current;
+    setIsSyncing(true);
+    setSyncError(null);
+    let pushed = 0;
+    let failed = 0;
+    try {
+      if (canJdbc) {
+        const cfg = mysqlConfig ?? await getMysqlConfig();
+        if (!cfg) {
+          setSyncError('No MySQL config saved');
+          return null;
+        }
+        if (!mysqlConfig) setMysqlConfigState(cfg);
+        for (const a of local) {
+          try { await pushAccountToMysql(cfg, a); pushed++; } catch { failed++; }
+        }
+        setLastSyncAt(new Date().toISOString());
+        return { pushed, failed };
+      }
+      if (Platform.OS === 'web') {
+        if (!webSyncAvailableRef.current) {
+          webSyncAvailableRef.current = await probeWebSync();
+        }
+        if (!webSyncAvailableRef.current) {
+          setSyncError('Remote sync not configured on the server');
+          return null;
+        }
+        for (const a of local) {
+          try { await apiRequest('POST', '/api/accounts', a); pushed++; } catch { failed++; }
+        }
+        setLastSyncAt(new Date().toISOString());
+        return { pushed, failed };
+      }
+      setSyncError('No remote backend available');
+      return null;
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Push failed');
+      return null;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [canJdbc, mysqlConfig]);
+
   const saveMysqlConfig = useCallback(async (cfg: MysqlConfig) => {
     await setMysqlConfig(cfg);
     setMysqlConfigState(cfg);
@@ -287,6 +333,11 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     return [...pinned, ...unpinned];
   }, [accounts, searchQuery, sortBy]);
 
+  const canSyncRemote =
+    syncStrategy === 'android-jdbc' ? !!mysqlConfig :
+    syncStrategy === 'web-http' ? webSyncAvailableRef.current :
+    Platform.OS === 'web'; // allow probe on demand
+
   return (
     <AccountsContext.Provider value={{
       accounts, filteredAccounts, isLoading,
@@ -294,9 +345,9 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       setSearchQuery, setSortBy,
       addAccount, updateAccount, deleteAccount,
       togglePin,
-      syncWithRemote, isSyncing, syncError, lastSyncAt,
+      syncWithRemote, pushAllToRemote, isSyncing, syncError, lastSyncAt,
       mysqlConfig, saveMysqlConfig, removeMysqlConfig,
-      syncStrategy,
+      syncStrategy, canSyncRemote,
     }}>
       {children}
     </AccountsContext.Provider>

@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 import { generateCode, formatCode, getTimeRemaining, getTimeProgress, getAvatarColor, getInitials } from '@/lib/otp';
 import type { OTPAccount } from '@/lib/otp';
 import { useAccounts } from '@/contexts/AccountsContext';
@@ -157,31 +158,41 @@ export default function AccountCard({ account }: AccountCardProps) {
           ) : null}
         </View>
         <View style={styles.actions}>
-          <TouchableOpacity onPress={handlePin} style={styles.iconBtn} hitSlop={8}>
-            <Ionicons
-              name={account.pinned ? 'pin' : 'pin-outline'}
-              size={18}
-              color={account.pinned ? Colors.primary : Colors.textSecondary}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleCopy} style={styles.iconBtn} hitSlop={8}>
-            <Ionicons name="copy-outline" size={18} color={Colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleEdit} style={styles.iconBtn} hitSlop={8}>
-            <Ionicons name="pencil-outline" size={18} color={Colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleDelete} style={styles.iconBtn} hitSlop={8}>
-            <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-          </TouchableOpacity>
+          <Tooltip label={account.pinned ? 'Unpin account' : 'Pin account to top'}>
+            <TouchableOpacity onPress={handlePin} style={styles.iconBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel={account.pinned ? 'Unpin' : 'Pin'}>
+              <Ionicons
+                name={account.pinned ? 'pin' : 'pin-outline'}
+                size={18}
+                color={account.pinned ? Colors.primary : Colors.textSecondary}
+              />
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label="Copy current code">
+            <TouchableOpacity onPress={handleCopy} style={styles.iconBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Copy code">
+              <Ionicons name="copy-outline" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label="Edit account">
+            <TouchableOpacity onPress={handleEdit} style={styles.iconBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Edit account">
+              <Ionicons name="pencil-outline" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label="Delete account">
+            <TouchableOpacity onPress={handleDelete} style={styles.iconBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete account">
+              <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+            </TouchableOpacity>
+          </Tooltip>
         </View>
       </View>
 
       <View style={styles.codeWrap}>
-        <TouchableOpacity onPress={handleCopy} activeOpacity={0.7} style={styles.codeTouchable}>
-          <Text style={[styles.code, isLow && styles.codeLow]}>
-            {formatCode(code)}
-          </Text>
-        </TouchableOpacity>
+        <Tooltip label="Tap to copy">
+          <TouchableOpacity onPress={handleCopy} activeOpacity={0.7} style={styles.codeTouchable} accessibilityRole="button" accessibilityLabel="Copy code">
+            <Text style={[styles.code, isLow && styles.codeLow]}>
+              {formatCode(code)}
+            </Text>
+          </TouchableOpacity>
+        </Tooltip>
         <CopiedBadge key={copyKey} visible={copyKey > 0} />
       </View>
 
@@ -190,13 +201,15 @@ export default function AccountCard({ account }: AccountCardProps) {
           {account.type.toUpperCase()} · {account.algorithm} · {remaining}s
         </Text>
         <View style={styles.footerRight}>
-          <TouchableOpacity onPress={() => setShowSecret(v => !v)} style={styles.eyeBtn} hitSlop={8}>
-            <Ionicons
-              name={showSecret ? 'eye-off-outline' : 'eye-outline'}
-              size={16}
-              color={Colors.textMuted}
-            />
-          </TouchableOpacity>
+          <Tooltip label={showSecret ? 'Hide secret key' : 'Reveal secret key'}>
+            <TouchableOpacity onPress={() => setShowSecret(v => !v)} style={styles.eyeBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel={showSecret ? 'Hide secret' : 'Show secret'}>
+              <Ionicons
+                name={showSecret ? 'eye-off-outline' : 'eye-outline'}
+                size={16}
+                color={Colors.textMuted}
+              />
+            </TouchableOpacity>
+          </Tooltip>
           {account.type === 'totp' && (
             <View style={[styles.dot, { backgroundColor: isLow ? Colors.danger : Colors.accent }]} />
           )}

@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccounts } from '@/contexts/AccountsContext';
 import type { MysqlConfig, MysqlSslMode } from '@/lib/storage';
@@ -95,16 +96,20 @@ export default function SettingsScreen() {
         <Field label="New Password" value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (min 4 chars)" />
         {pwError ? <Text style={styles.error}>{pwError}</Text> : null}
         {pwSuccess ? <Text style={styles.success}>Password changed successfully</Text> : null}
-        <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleChangePassword}>
-          <Text style={styles.btnText}>Change Password</Text>
-        </TouchableOpacity>
+        <Tooltip label="Save your new password">
+          <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleChangePassword} accessibilityRole="button" accessibilityLabel="Change password">
+            <Text style={styles.btnText}>Change Password</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </Section>
 
       <Section title="Session">
-        <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={handleLogout}>
-          <Ionicons name="lock-closed-outline" size={16} color={Colors.danger} style={{ marginRight: 8 }} />
-          <Text style={[styles.btnText, { color: Colors.danger }]}>Lock App</Text>
-        </TouchableOpacity>
+        <Tooltip label="Lock the app and return to the login screen">
+          <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={handleLogout} accessibilityRole="button" accessibilityLabel="Lock app">
+            <Ionicons name="lock-closed-outline" size={16} color={Colors.danger} style={{ marginRight: 8 }} />
+            <Text style={[styles.btnText, { color: Colors.danger }]}>Lock App</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </Section>
 
       <View style={styles.footer}>
@@ -219,22 +224,28 @@ function MysqlConfigCard() {
 
       <View style={styles.row}>
         <Text style={styles.rowLabel}>Require SSL</Text>
-        <Switch
-          value={draft.sslMode === 'REQUIRED'}
-          onValueChange={toggleSsl}
-          trackColor={{ false: Colors.border, true: Colors.primaryDim }}
-          thumbColor={draft.sslMode === 'REQUIRED' ? Colors.primary : Colors.textMuted}
-        />
+        <Tooltip label="When on, the connection to MySQL must use TLS">
+          <Switch
+            value={draft.sslMode === 'REQUIRED'}
+            onValueChange={toggleSsl}
+            trackColor={{ false: Colors.border, true: Colors.primaryDim }}
+            thumbColor={draft.sslMode === 'REQUIRED' ? Colors.primary : Colors.textMuted}
+            accessibilityLabel="Require SSL"
+          />
+        </Tooltip>
       </View>
 
       <View style={styles.row}>
         <Text style={styles.rowLabel}>Auto-sync on launch</Text>
-        <Switch
-          value={draft.autoSync !== false}
-          onValueChange={v => setField('autoSync', v)}
-          trackColor={{ false: Colors.border, true: Colors.primaryDim }}
-          thumbColor={draft.autoSync !== false ? Colors.primary : Colors.textMuted}
-        />
+        <Tooltip label="Pull accounts from MySQL every time the app starts">
+          <Switch
+            value={draft.autoSync !== false}
+            onValueChange={v => setField('autoSync', v)}
+            trackColor={{ false: Colors.border, true: Colors.primaryDim }}
+            thumbColor={draft.autoSync !== false ? Colors.primary : Colors.textMuted}
+            accessibilityLabel="Auto-sync on launch"
+          />
+        </Tooltip>
       </View>
 
       {testMsg?.kind === 'err' ? <Text style={styles.error}>{testMsg.text}</Text> : null}
@@ -245,37 +256,53 @@ function MysqlConfigCard() {
       <Text style={styles.metaLine}>Last sync: {formatWhen(lastSyncAt)}</Text>
 
       <View style={styles.btnRow}>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnSecondary, testing && styles.btnDisabled]}
-          onPress={onTest}
-          disabled={testing}
-        >
-          <Text style={[styles.btnText, { color: Colors.text }]}>{testing ? 'Testing...' : 'Test'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnPrimary, testing && styles.btnDisabled]}
-          onPress={onSave}
-          disabled={testing}
-        >
-          <Text style={styles.btnText}>Save</Text>
-        </TouchableOpacity>
+        <Tooltip label="Test the connection without saving">
+          <TouchableOpacity
+            style={[styles.btn, styles.btnSecondary, testing && styles.btnDisabled]}
+            onPress={onTest}
+            disabled={testing}
+            accessibilityRole="button"
+            accessibilityLabel="Test connection"
+          >
+            <Text style={[styles.btnText, { color: Colors.text }]}>{testing ? 'Testing...' : 'Test'}</Text>
+          </TouchableOpacity>
+        </Tooltip>
+        <Tooltip label="Save config after a successful connection test">
+          <TouchableOpacity
+            style={[styles.btn, styles.btnPrimary, testing && styles.btnDisabled]}
+            onPress={onSave}
+            disabled={testing}
+            accessibilityRole="button"
+            accessibilityLabel="Save MySQL config"
+          >
+            <Text style={styles.btnText}>Save</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </View>
 
       <View style={styles.btnRow}>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnSecondary, (isSyncing || !mysqlConfig) && styles.btnDisabled]}
-          onPress={onSyncNow}
-          disabled={isSyncing || !mysqlConfig}
-        >
-          <Text style={[styles.btnText, { color: Colors.text }]}>{isSyncing ? 'Syncing...' : 'Sync now'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.btnDanger, !mysqlConfig && styles.btnDisabled]}
-          onPress={onClear}
-          disabled={!mysqlConfig}
-        >
-          <Text style={[styles.btnText, { color: Colors.danger }]}>Clear</Text>
-        </TouchableOpacity>
+        <Tooltip label="Pull accounts from MySQL now">
+          <TouchableOpacity
+            style={[styles.btn, styles.btnSecondary, (isSyncing || !mysqlConfig) && styles.btnDisabled]}
+            onPress={onSyncNow}
+            disabled={isSyncing || !mysqlConfig}
+            accessibilityRole="button"
+            accessibilityLabel="Sync now"
+          >
+            <Text style={[styles.btnText, { color: Colors.text }]}>{isSyncing ? 'Syncing...' : 'Sync now'}</Text>
+          </TouchableOpacity>
+        </Tooltip>
+        <Tooltip label="Remove the saved config from this device">
+          <TouchableOpacity
+            style={[styles.btn, styles.btnDanger, !mysqlConfig && styles.btnDisabled]}
+            onPress={onClear}
+            disabled={!mysqlConfig}
+            accessibilityRole="button"
+            accessibilityLabel="Clear MySQL config"
+          >
+            <Text style={[styles.btnText, { color: Colors.danger }]}>Clear</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </View>
     </View>
   );
@@ -299,17 +326,20 @@ function Field({
   return (
     <View style={fStyles.wrap}>
       <Text style={fStyles.label}>{label}</Text>
-      <TextInput
-        style={fStyles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textMuted}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType || 'default'}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+      <Tooltip label={label}>
+        <TextInput
+          style={fStyles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={Colors.textMuted}
+          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType || 'default'}
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel={label}
+        />
+      </Tooltip>
     </View>
   );
 }

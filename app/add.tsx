@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { generateId, buildOtpUri, parseOtpUri } from '@/lib/otp';
 import type { OTPAccount, OTPAlgorithm, OTPType } from '@/lib/otp';
@@ -129,9 +130,11 @@ export default function AddScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-          <Ionicons name="close" size={24} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        <Tooltip label="Close without saving">
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
+            <Ionicons name="close" size={24} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </Tooltip>
         <Text style={styles.title}>Add Account</Text>
         <View style={{ width: 32 }} />
       </View>
@@ -141,46 +144,57 @@ export default function AddScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 32 }]}
         showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/scan')} activeOpacity={0.8}>
-          <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
-          <Text style={styles.scanBtnText}>Scan QR Code</Text>
-        </TouchableOpacity>
+        <Tooltip label="Scan a QR code from another authenticator">
+          <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/scan')} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Scan QR code">
+            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
+            <Text style={styles.scanBtnText}>Scan QR Code</Text>
+          </TouchableOpacity>
+        </Tooltip>
 
         <View style={styles.inputRow}>
-          <TextInput
-            style={styles.secretInput}
-            value={secretInput}
-            onChangeText={setSecretInput}
-            placeholder="Paste secret key or OTP URI..."
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleAdd}
-          />
-          <TouchableOpacity
-            style={[styles.addBtn, saving && { opacity: 0.6 }]}
-            onPress={handleAdd}
-            disabled={saving}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.addBtnText}>{saving ? '...' : 'Add'}</Text>
-          </TouchableOpacity>
+          <Tooltip label="Paste a Base32 secret or a full otpauth:// URI">
+            <TextInput
+              style={styles.secretInput}
+              value={secretInput}
+              onChangeText={setSecretInput}
+              placeholder="Paste secret key or OTP URI..."
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleAdd}
+              accessibilityLabel="Secret or OTP URI"
+            />
+          </Tooltip>
+          <Tooltip label="Save this account">
+            <TouchableOpacity
+              style={[styles.addBtn, saving && { opacity: 0.6 }]}
+              onPress={handleAdd}
+              disabled={saving}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Add account"
+            >
+              <Text style={styles.addBtnText}>{saving ? '...' : 'Add'}</Text>
+            </TouchableOpacity>
+          </Tooltip>
         </View>
 
         {error ? (
           <Text style={styles.error}>{error}</Text>
         ) : null}
 
-        <TouchableOpacity style={styles.advancedToggle} onPress={toggleAdvanced} activeOpacity={0.7}>
-          <Text style={styles.advancedLabel}>Advanced options</Text>
-          <Ionicons
-            name={showAdvanced ? 'chevron-up' : 'chevron-down'}
-            size={16}
-            color={Colors.textMuted}
-          />
-        </TouchableOpacity>
+        <Tooltip label="Show or hide advanced options">
+          <TouchableOpacity style={styles.advancedToggle} onPress={toggleAdvanced} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Toggle advanced options">
+            <Text style={styles.advancedLabel}>Advanced options</Text>
+            <Ionicons
+              name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={Colors.textMuted}
+            />
+          </TouchableOpacity>
+        </Tooltip>
 
         {showAdvanced && (
           <View style={styles.advancedPanel}>
@@ -260,12 +274,17 @@ function ChipRow({ children }: { children: React.ReactNode }) {
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity
-      style={[chipStyles.chip, active && chipStyles.active]}
-      onPress={onPress}
-    >
-      <Text style={[chipStyles.label, active && chipStyles.activeLabel]}>{label}</Text>
-    </TouchableOpacity>
+    <Tooltip label={`Set to ${label}`}>
+      <TouchableOpacity
+        style={[chipStyles.chip, active && chipStyles.active]}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: active }}
+      >
+        <Text style={[chipStyles.label, active && chipStyles.activeLabel]}>{label}</Text>
+      </TouchableOpacity>
+    </Tooltip>
   );
 }
 
@@ -278,16 +297,19 @@ function AdvField({
   return (
     <View style={advStyles.fieldWrap}>
       <Text style={advStyles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={advStyles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textMuted}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType={keyboardType}
-      />
+      <Tooltip label={label}>
+        <TextInput
+          style={advStyles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={Colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType={keyboardType}
+          accessibilityLabel={label}
+        />
+      </Tooltip>
     </View>
   );
 }

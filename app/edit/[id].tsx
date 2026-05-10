@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 import { useAccounts } from '@/contexts/AccountsContext';
 import { getAvatarColor, getInitials } from '@/lib/otp';
 
@@ -30,9 +31,11 @@ export default function EditScreen() {
     return (
       <View style={[styles.container, { paddingTop: topPad, alignItems: 'center', justifyContent: 'center' }]}>
         <Text style={{ color: Colors.textSecondary }}>Account not found</Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.btn}>
-          <Text style={styles.btnText}>Go Back</Text>
-        </TouchableOpacity>
+        <Tooltip label="Return to the previous screen">
+          <TouchableOpacity onPress={() => router.back()} style={styles.btn} accessibilityRole="button" accessibilityLabel="Go back">
+            <Text style={styles.btnText}>Go Back</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </View>
     );
   }
@@ -58,15 +61,19 @@ export default function EditScreen() {
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-          <Ionicons name="close" size={24} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        <Tooltip label="Discard changes">
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
+            <Ionicons name="close" size={24} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </Tooltip>
         <Text style={styles.title}>Edit Account</Text>
-        <TouchableOpacity onPress={handleSave} disabled={saving} hitSlop={8}>
-          <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-            {saving ? '...' : 'Save'}
-          </Text>
-        </TouchableOpacity>
+        <Tooltip label="Save changes">
+          <TouchableOpacity onPress={handleSave} disabled={saving} hitSlop={8} accessibilityRole="button" accessibilityLabel="Save">
+            <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
+              {saving ? '...' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+        </Tooltip>
       </View>
 
       <ScrollView
@@ -81,26 +88,32 @@ export default function EditScreen() {
 
         <View style={styles.field}>
           <Text style={styles.label}>Display Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Account name"
-            placeholderTextColor={Colors.textMuted}
-            autoFocus
-          />
+          <Tooltip label="How this account will appear in the list">
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Account name"
+              placeholderTextColor={Colors.textMuted}
+              autoFocus
+              accessibilityLabel="Display name"
+            />
+          </Tooltip>
         </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>Issuer (optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={issuer}
-            onChangeText={setIssuer}
-            placeholder="Service provider"
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="none"
-          />
+          <Tooltip label="Name of the service (e.g. GitHub, Google)">
+            <TextInput
+              style={styles.input}
+              value={issuer}
+              onChangeText={setIssuer}
+              placeholder="Service provider"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              accessibilityLabel="Issuer"
+            />
+          </Tooltip>
         </View>
 
         <View style={styles.infoCard}>
@@ -115,14 +128,18 @@ export default function EditScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <TouchableOpacity
-          style={[styles.btn, saving && { opacity: 0.6 }]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.btnText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
-        </TouchableOpacity>
+        <Tooltip label="Save changes to this account">
+          <TouchableOpacity
+            style={[styles.btn, saving && { opacity: 0.6 }]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Save changes"
+          >
+            <Text style={styles.btnText}>{saving ? 'Saving...' : 'Save Changes'}</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </ScrollView>
     </View>
   );

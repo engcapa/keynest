@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
+import { Tooltip } from '@/components/Tooltip';
 
 let CameraView: any = null;
 let useCameraPermissions: any = null;
@@ -38,9 +39,11 @@ function NativeScanner() {
         <Ionicons name="camera-outline" size={48} color={Colors.textMuted} />
         <Text style={styles.fallbackTitle}>Camera Permission Required</Text>
         <Text style={styles.fallbackBody}>Allow camera access to scan QR codes</Text>
-        <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
-          <Text style={styles.permBtnText}>Allow Camera</Text>
-        </TouchableOpacity>
+        <Tooltip label="Grant camera permission to scan QR codes">
+          <TouchableOpacity style={styles.permBtn} onPress={requestPermission} accessibilityRole="button" accessibilityLabel="Allow camera">
+            <Text style={styles.permBtnText}>Allow Camera</Text>
+          </TouchableOpacity>
+        </Tooltip>
       </View>
     );
   }
@@ -63,9 +66,11 @@ function NativeScanner() {
         onBarcodeScanned={handleBarCodeScanned}
       />
       <View style={[styles.overlay, { paddingTop: insets.top + 16 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
-          <Ionicons name="close" size={24} color="#fff" />
-        </TouchableOpacity>
+        <Tooltip label="Close scanner">
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close scanner">
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </Tooltip>
       </View>
       <View style={styles.scanFrame}>
         <View style={styles.scanBox}>
