@@ -1,15 +1,24 @@
-name: Build Android APK
+name: Android APK Release
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v1.0.0). Leave empty to only build the APK as a workflow artifact.'
+        required: false
+        default: ''
 
 jobs:
-  build-apk:
+  build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -21,10 +30,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Java
+      - name: Setup Java (JDK 17)
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Setup Android SDK
@@ -33,28 +42,75 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Expo CLI
-        run: npm install -g @expo/cli eas-cli
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${GITHUB_REF#refs/tags/}" ] && [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/}" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            TAG="${{ github.event.inputs.release_tag }}"
+          else
+            TAG=""
+          fi
+          if [ -n "$TAG" ]; then
+            APP_VERSION="${TAG#v}"
+            node -e "const fs=require('fs');const p='./app.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.expo.version='${APP_VERSION}';fs.writeFileSync(p, JSON.stringify(j,null,2)+'\n');"
+            echo "Synced app.json version to ${APP_VERSION} from tag ${TAG}"
+          else
+            APP_VERSION=$(node -p "require('./app.json').expo.version")
+          fi
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: ${APP_VERSION}, tag: ${TAG}"
 
-      - name: Build APK with EAS (local)
-        run: eas build --platform android --profile preview --local --output ./keynest.apk --non-interactive
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --no-install --clean
 
-      - name: Upload APK artifact
+      - name: Make gradlew executable
+        working-directory: android
+        run: chmod +x ./gradlew
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace --info
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found"
+            exit 1
+          fi
+          DEST="keynest-${{ steps.version.outputs.app_version }}.apk"
+          cp "$APK_PATH" "$DEST"
+          echo "apk_path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "Built: $DEST ($(du -h "$DEST" | cut -f1))"
+
+      - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: keynest-android-apk
-          path: keynest.apk
+          name: keynest-android-${{ steps.version.outputs.app_version }}
+          path: ${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Upload APK to Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create GitHub Release
+        if: steps.version.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
-          files: keynest.apk
-          name: Key Nest ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Key Nest ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ steps.apk.outputs.apk_path }}
+          fail_on_unmatched_files: true
