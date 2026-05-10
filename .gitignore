@@ -27,6 +27,7 @@ release/
 # Code agent / AI tool caches and state
 .aider*
 .claude/
+CLAUDE.md
 .cursor/
 .copilot/
 .codeium/
