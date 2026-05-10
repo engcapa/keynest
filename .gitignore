@@ -16,3 +16,5 @@ web-build/
 
 expo-env.d.ts
 # @end expo-cli
+
+attached_assets

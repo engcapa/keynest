@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, Platform, Alert,
+  StyleSheet, Platform, ScrollView, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -17,40 +17,55 @@ const DIGITS = [6, 8] as const;
 const PERIODS = [30, 60] as const;
 const TYPES: OTPType[] = ['totp', 'hotp'];
 
+function autoName(): string {
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `Account ${dateStr}`;
+}
+
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const { addAccount, accounts } = useAccounts();
 
-  const [tab, setTab] = useState<'manual' | 'uri'>('manual');
+  const [secretInput, setSecretInput] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const advAnim = useRef(new Animated.Value(0)).current;
+
   const [name, setName] = useState('');
   const [issuer, setIssuer] = useState('');
-  const [secret, setSecret] = useState('');
   const [algorithm, setAlgorithm] = useState<OTPAlgorithm>('SHA1');
   const [digits, setDigits] = useState<6 | 8>(6);
   const [period, setPeriod] = useState<30 | 60>(30);
   const [type, setType] = useState<OTPType>('totp');
   const [counter, setCounter] = useState('0');
-  const [uriInput, setUriInput] = useState('');
+
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
-  const handleSave = async () => {
+  const toggleAdvanced = () => {
+    const toValue = showAdvanced ? 0 : 1;
+    setShowAdvanced(!showAdvanced);
+    Animated.spring(advAnim, { toValue, useNativeDriver: false, friction: 8 }).start();
+  };
+
+  const handleAdd = async () => {
     setError('');
+    const raw = secretInput.trim();
+    if (!raw) { setError('Please enter a secret key or OTP URI'); return; }
+
     let account: OTPAccount;
 
-    if (tab === 'uri') {
-      if (!uriInput.trim()) { setError('Please enter an OTP URI'); return; }
-      const parsed = parseOtpUri(uriInput.trim());
+    if (raw.startsWith('otpauth://')) {
+      const parsed = parseOtpUri(raw);
       if (!parsed) { setError('Invalid OTP URI format'); return; }
-      const uri = uriInput.trim();
-      if (accounts.some(a => a.uri === uri)) { setError('This account already exists'); return; }
+      if (accounts.some(a => a.uri === raw)) { setError('This account already exists'); return; }
       account = {
         id: generateId(),
-        uri,
-        name: parsed.name || 'Unknown',
+        uri: raw,
+        name: parsed.name || autoName(),
         issuer: parsed.issuer || '',
         secret: parsed.secret || '',
         algorithm: parsed.algorithm || 'SHA1',
@@ -62,11 +77,17 @@ export default function AddScreen() {
         updatedAt: new Date().toISOString(),
       };
     } else {
-      if (!secret.trim()) { setError('Secret key is required'); return; }
-      const cleanSecret = secret.replace(/\s/g, '').toUpperCase();
-      if (!/^[A-Z2-7=]+$/.test(cleanSecret)) { setError('Secret must be a valid Base32 string'); return; }
-      const displayName = name.trim() || cleanSecret;
-      const uri = buildOtpUri({ name: displayName, issuer: issuer.trim(), secret: cleanSecret, algorithm, digits, period, type, counter: parseInt(counter) || 0 });
+      const cleanSecret = raw.replace(/\s/g, '').toUpperCase();
+      if (!/^[A-Z2-7=]+$/.test(cleanSecret)) {
+        setError('Invalid secret — must be a Base32 string (A–Z, 2–7)');
+        return;
+      }
+      const displayName = name.trim() || autoName();
+      const uri = buildOtpUri({
+        name: displayName, issuer: issuer.trim(),
+        secret: cleanSecret, algorithm, digits, period, type,
+        counter: parseInt(counter) || 0,
+      });
       if (accounts.some(a => a.uri === uri)) { setError('This account already exists'); return; }
       account = {
         id: generateId(),
@@ -89,15 +110,11 @@ export default function AddScreen() {
       await addAccount(account);
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
-    } catch (e) {
+    } catch {
       setError('Failed to save account');
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleScan = () => {
-    router.push('/scan');
   };
 
   return (
@@ -107,101 +124,106 @@ export default function AddScreen() {
           <Ionicons name="close" size={24} color={Colors.textSecondary} />
         </TouchableOpacity>
         <Text style={styles.title}>Add Account</Text>
-        <TouchableOpacity onPress={handleSave} disabled={saving} hitSlop={8}>
-          <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-            {saving ? 'Saving...' : 'Save'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'manual' && styles.tabActive]}
-          onPress={() => setTab('manual')}
-        >
-          <Text style={[styles.tabText, tab === 'manual' && styles.tabTextActive]}>Manual</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'uri' && styles.tabActive]}
-          onPress={() => setTab('uri')}
-        >
-          <Text style={[styles.tabText, tab === 'uri' && styles.tabTextActive]}>URI / QR Code</Text>
-        </TouchableOpacity>
+        <View style={{ width: 32 }} />
       </View>
 
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 20 }]}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 32 }]}
+        showsVerticalScrollIndicator={false}
       >
-        {tab === 'uri' ? (
-          <View style={styles.section}>
-            {Platform.OS !== 'web' && (
-              <TouchableOpacity style={styles.scanBtn} onPress={handleScan}>
-                <Ionicons name="qr-code-outline" size={22} color={Colors.primary} />
-                <Text style={styles.scanBtnText}>Scan QR Code</Text>
-              </TouchableOpacity>
-            )}
-            <Text style={styles.orText}>Or paste the OTP URI</Text>
-            <TextInput
-              style={[styles.input, styles.inputMulti]}
-              value={uriInput}
-              onChangeText={setUriInput}
-              placeholder="otpauth://totp/Example:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example"
-              placeholderTextColor={Colors.textMuted}
-              multiline
-              autoCapitalize="none"
-              autoCorrect={false}
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity style={styles.scanBtn} onPress={() => router.push('/scan')} activeOpacity={0.8}>
+            <Ionicons name="qr-code-outline" size={20} color={Colors.primary} />
+            <Text style={styles.scanBtnText}>Scan QR Code</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.secretInput}
+            value={secretInput}
+            onChangeText={setSecretInput}
+            placeholder="Paste secret key or OTP URI..."
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleAdd}
+          />
+          <TouchableOpacity
+            style={[styles.addBtn, saving && { opacity: 0.6 }]}
+            onPress={handleAdd}
+            disabled={saving}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addBtnText}>{saving ? '...' : 'Add'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {error ? (
+          <Text style={styles.error}>{error}</Text>
+        ) : null}
+
+        <TouchableOpacity style={styles.advancedToggle} onPress={toggleAdvanced} activeOpacity={0.7}>
+          <Text style={styles.advancedLabel}>Advanced options</Text>
+          <Ionicons
+            name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={Colors.textMuted}
+          />
+        </TouchableOpacity>
+
+        {showAdvanced && (
+          <View style={styles.advancedPanel}>
+            <AdvField
+              label="Name"
+              value={name}
+              onChangeText={setName}
+              placeholder={autoName()}
             />
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <FormField label="Account Name" value={name} onChangeText={setName} placeholder="e.g. GitHub: john@example.com" />
-            <FormField label="Issuer (optional)" value={issuer} onChangeText={setIssuer} placeholder="e.g. GitHub" />
-            <FormField
-              label="Secret Key *"
-              value={secret}
-              onChangeText={setSecret}
-              placeholder="Base32 encoded secret"
-              autoCapitalize="characters"
-              autoCorrect={false}
-              hint="Found in the app's security settings or QR code"
+            <AdvField
+              label="Issuer"
+              value={issuer}
+              onChangeText={setIssuer}
+              placeholder="e.g. GitHub, Google"
             />
 
-            <Text style={styles.fieldLabel}>Type</Text>
-            <View style={styles.chipRow}>
+            <AdvLabel>Type</AdvLabel>
+            <ChipRow>
               {TYPES.map(t => (
                 <Chip key={t} label={t.toUpperCase()} active={type === t} onPress={() => setType(t)} />
               ))}
-            </View>
+            </ChipRow>
 
-            <Text style={styles.fieldLabel}>Algorithm</Text>
-            <View style={styles.chipRow}>
+            <AdvLabel>Algorithm</AdvLabel>
+            <ChipRow>
               {ALGORITHMS.map(a => (
                 <Chip key={a} label={a} active={algorithm === a} onPress={() => setAlgorithm(a)} />
               ))}
-            </View>
+            </ChipRow>
 
-            <Text style={styles.fieldLabel}>Digits</Text>
-            <View style={styles.chipRow}>
+            <AdvLabel>Digits</AdvLabel>
+            <ChipRow>
               {DIGITS.map(d => (
                 <Chip key={d} label={String(d)} active={digits === d} onPress={() => setDigits(d)} />
               ))}
-            </View>
+            </ChipRow>
 
             {type === 'totp' && (
               <>
-                <Text style={styles.fieldLabel}>Period (seconds)</Text>
-                <View style={styles.chipRow}>
+                <AdvLabel>Period</AdvLabel>
+                <ChipRow>
                   {PERIODS.map(p => (
                     <Chip key={p} label={`${p}s`} active={period === p} onPress={() => setPeriod(p)} />
                   ))}
-                </View>
+                </ChipRow>
               </>
             )}
 
             {type === 'hotp' && (
-              <FormField
+              <AdvField
                 label="Initial Counter"
                 value={counter}
                 onChangeText={setCounter}
@@ -212,123 +234,141 @@ export default function AddScreen() {
           </View>
         )}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.saveFullBtn, saving && { opacity: 0.6 }]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.saveFullBtnText}>{saving ? 'Saving...' : 'Add Account'}</Text>
-        </TouchableOpacity>
+        <Text style={styles.hint}>
+          Accepts Base32 secret key (e.g. JBSWY3DPEHPK3PXP) or a full otpauth:// URI.
+          A name with today's date is auto-assigned if left blank.
+        </Text>
       </ScrollView>
     </View>
   );
 }
 
-function FormField({
-  label, value, onChangeText, placeholder, autoCapitalize, autoCorrect, keyboardType, hint
-}: {
-  label: string; value: string; onChangeText: (v: string) => void;
-  placeholder?: string; autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
-  autoCorrect?: boolean; keyboardType?: 'numeric'; hint?: string;
-}) {
-  return (
-    <View style={ffStyles.wrap}>
-      <Text style={ffStyles.label}>{label}</Text>
-      <TextInput
-        style={ffStyles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textMuted}
-        autoCapitalize={autoCapitalize || 'none'}
-        autoCorrect={autoCorrect ?? false}
-        keyboardType={keyboardType}
-      />
-      {hint ? <Text style={ffStyles.hint}>{hint}</Text> : null}
-    </View>
-  );
+function AdvLabel({ children }: { children: React.ReactNode }) {
+  return <Text style={advStyles.label}>{children}</Text>;
+}
+
+function ChipRow({ children }: { children: React.ReactNode }) {
+  return <View style={advStyles.chipRow}>{children}</View>;
 }
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity
-      style={[chipStyles.chip, active && chipStyles.chipActive]}
+      style={[chipStyles.chip, active && chipStyles.active]}
       onPress={onPress}
     >
-      <Text style={[chipStyles.label, active && chipStyles.labelActive]}>{label}</Text>
+      <Text style={[chipStyles.label, active && chipStyles.activeLabel]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-const ffStyles = StyleSheet.create({
-  wrap: { marginBottom: 16 },
-  label: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.8 },
-  input: {
-    backgroundColor: Colors.card, borderRadius: Colors.radiusSm,
-    borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: 14, height: 48, color: Colors.text, fontSize: 15,
+function AdvField({
+  label, value, onChangeText, placeholder, keyboardType,
+}: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder?: string; keyboardType?: 'numeric';
+}) {
+  return (
+    <View style={advStyles.fieldWrap}>
+      <Text style={advStyles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={advStyles.input}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.textMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType={keyboardType}
+      />
+    </View>
+  );
+}
+
+const advStyles = StyleSheet.create({
+  label: {
+    fontSize: 11, color: Colors.textMuted, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8,
   },
-  hint: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  fieldWrap: { marginBottom: 14 },
+  fieldLabel: { fontSize: 12, color: Colors.textSecondary, marginBottom: 6 },
+  input: {
+    backgroundColor: Colors.surface, borderRadius: Colors.radiusSm,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 12, height: 44, color: Colors.text, fontSize: 14,
+  },
 });
 
 const chipStyles = StyleSheet.create({
   chip: {
-    paddingHorizontal: 16, paddingVertical: 8,
+    paddingHorizontal: 14, paddingVertical: 7,
     borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
   },
-  chipActive: { backgroundColor: Colors.primaryDim, borderColor: Colors.primary },
+  active: { backgroundColor: Colors.primaryDim, borderColor: Colors.primary },
   label: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  labelActive: { color: Colors.primary },
+  activeLabel: { color: Colors.primary },
 });
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingBottom: 16, paddingTop: 4,
+    paddingHorizontal: 20, paddingBottom: 20, paddingTop: 4,
   },
-  title: { fontSize: 17, fontWeight: '700', color: Colors.text, fontFamily: 'Inter_700Bold' },
-  saveBtn: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
-  tabBar: {
-    flexDirection: 'row', marginHorizontal: 16, marginBottom: 20,
-    backgroundColor: Colors.card, borderRadius: Colors.radiusSm,
-    borderWidth: 1, borderColor: Colors.border, padding: 4,
-  },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
-  tabActive: { backgroundColor: Colors.primary },
-  tabText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  tabTextActive: { color: '#fff' },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 16 },
-  section: {},
+  title: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  content: { paddingHorizontal: 20 },
+
   scanBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.card, borderRadius: Colors.radius,
-    borderWidth: 1, borderColor: Colors.primary + '55',
-    paddingVertical: 18, gap: 12, marginBottom: 20,
-  },
-  scanBtnText: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
-  orText: { textAlign: 'center', color: Colors.textMuted, marginBottom: 12, fontSize: 13 },
-  input: {
-    backgroundColor: Colors.card, borderRadius: Colors.radiusSm,
+    gap: 10, borderRadius: Colors.radius,
     borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: 14, paddingVertical: 12,
-    color: Colors.text, fontSize: 14,
+    backgroundColor: Colors.card,
+    paddingVertical: 16, marginBottom: 20,
   },
-  inputMulti: { minHeight: 100, textAlignVertical: 'top' },
-  fieldLabel: {
-    fontSize: 12, color: Colors.textSecondary, fontWeight: '600',
-    marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8,
+  scanBtnText: { color: Colors.primary, fontSize: 15, fontWeight: '700' },
+
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginBottom: 10,
   },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
-  error: { color: Colors.danger, fontSize: 13, textAlign: 'center', marginBottom: 12 },
-  saveFullBtn: {
-    backgroundColor: Colors.primary, borderRadius: Colors.radiusSm,
-    height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 8,
+  secretInput: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: Colors.radiusSm,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 14, height: 50,
+    color: Colors.text, fontSize: 15,
   },
-  saveFullBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  addBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Colors.radiusSm,
+    paddingHorizontal: 22, height: 50,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  error: { color: Colors.danger, fontSize: 13, marginBottom: 12 },
+
+  advancedToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderTopWidth: 1, borderTopColor: Colors.border,
+    marginTop: 10,
+  },
+  advancedLabel: { fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
+
+  advancedPanel: {
+    backgroundColor: Colors.card,
+    borderRadius: Colors.radius,
+    borderWidth: 1, borderColor: Colors.border,
+    padding: 16, marginBottom: 16,
+  },
+
+  hint: {
+    fontSize: 12, color: Colors.textMuted,
+    lineHeight: 18, textAlign: 'center',
+    marginTop: 8,
+  },
 });
