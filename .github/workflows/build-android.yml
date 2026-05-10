@@ -84,8 +84,12 @@ jobs:
       - name: Tune Gradle / Kotlin memory for CI
         working-directory: android
         run: |
-          # The default template uses -Xmx2048m which is not enough for
-          # expo-modules-core's KSP+Kotlin compile on ubuntu-latest (7 GB).
+          # The generated template defaults to two pressure points that are too
+          # high for the standard ubuntu-latest runner:
+          # 1. release R8/minify over the React Native + Expo + mysql-connector-j
+          #    graph can exhaust the Gradle daemon heap;
+          # 2. running R8/resource tasks concurrently leaves too little headroom
+          #    for the daemon and its native file watcher.
           #
           # Pin Kotlin to 1.9.24 to match the version shipped by
           # @react-native/gradle-plugin (gradle/libs.versions.toml: kotlin = "1.9.24"),
@@ -95,14 +99,18 @@ jobs:
           # Compiler extension). With 1.9.24 it resolves to Compose Compiler 1.5.14,
           # which matches the actual Kotlin compiler version and clears the
           # "Compose Compiler requires Kotlin version 1.9.25" error.
-          sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d; /^android\.kotlinVersion=/d; /^android\.r8\.maxHeapSize=/d' gradle.properties
+          sed -i -E '/^org\.gradle\.jvmargs=/d; /^org\.gradle\.workers\.max=/d; /^org\.gradle\.parallel=/d; /^org\.gradle\.vfs\.watch=/d; /^kotlin\.daemon\.jvmargs=/d; /^reactNativeArchitectures=/d; /^android\.kotlinVersion=/d; /^android\.r8\.maxHeapSize=/d; /^android\.enableProguardInReleaseBuilds=/d; /^android\.enableShrinkResourcesInReleaseBuilds=/d; /^android\.enablePngCrunchInReleaseBuilds=/d' gradle.properties
           cat >> gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
-          org.gradle.workers.max=2
+          org.gradle.workers.max=1
+          org.gradle.parallel=false
+          org.gradle.vfs.watch=false
           kotlin.daemon.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=512m
           reactNativeArchitectures=arm64-v8a
           android.kotlinVersion=1.9.24
-          android.r8.maxHeapSize=4g
+          android.enableProguardInReleaseBuilds=false
+          android.enableShrinkResourcesInReleaseBuilds=false
+          android.enablePngCrunchInReleaseBuilds=false
           EOF
           echo "--- final gradle.properties ---"
           cat gradle.properties
@@ -123,7 +131,7 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace --max-workers=2 -x lintVitalRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease
+        run: ./gradlew assembleRelease --no-daemon --no-watch-fs --stacktrace --max-workers=1 -Pandroid.enableProguardInReleaseBuilds=false -Pandroid.enableShrinkResourcesInReleaseBuilds=false -x lintVitalRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease
 
       - name: Locate APK
         id: apk
