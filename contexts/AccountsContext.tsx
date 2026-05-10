@@ -17,12 +17,22 @@ interface AccountsContextType {
   addAccount: (account: OTPAccount) => Promise<void>;
   updateAccount: (id: string, updates: Partial<OTPAccount>) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  togglePin: (id: string) => Promise<void>;
   syncWithRemote: () => Promise<void>;
   isSyncing: boolean;
   syncError: string | null;
 }
 
 const AccountsContext = createContext<AccountsContextType | null>(null);
+
+function sortAccounts(list: OTPAccount[], sortBy: SortBy): OTPAccount[] {
+  return [...list].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'issuer') return a.issuer.localeCompare(b.issuer);
+    if (sortBy === 'createdAt') return b.createdAt.localeCompare(a.createdAt);
+    return 0;
+  });
+}
 
 export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<OTPAccount[]>([]);
@@ -40,9 +50,10 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const local = await loadAccounts();
-      setAccounts(local);
+      const migrated = local.map(a => ({ pinned: false, ...a }));
+      setAccounts(migrated);
       if (Platform.OS === 'web') {
-        await syncFromRemote(local);
+        await syncFromRemote(migrated);
       }
     } finally {
       setIsLoading(false);
@@ -55,9 +66,10 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       if (!settings.mysqlEnabled && !settings.serverUrl) return;
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        setAccounts(remote);
+        const migrated = remote.map(a => ({ pinned: false, ...a }));
+        setAccounts(migrated);
         if (Platform.OS !== 'web') {
-          await saveAccounts(remote);
+          await saveAccounts(migrated);
         }
       }
     } catch {
@@ -83,9 +95,10 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addAccount = useCallback(async (account: OTPAccount) => {
-    const updated = [...accounts, account];
+    const withPin = { pinned: false, ...account };
+    const updated = [...accounts, withPin];
     await persist(updated);
-    await pushToRemote(account, 'POST', '/api/accounts');
+    await pushToRemote(withPin, 'POST', '/api/accounts');
   }, [accounts]);
 
   const updateAccount = useCallback(async (id: string, updates: Partial<OTPAccount>) => {
@@ -109,6 +122,15 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     } catch { /* offline */ }
   }, [accounts]);
 
+  const togglePin = useCallback(async (id: string) => {
+    const updated = accounts.map(a =>
+      a.id === id ? { ...a, pinned: !a.pinned, updatedAt: new Date().toISOString() } : a
+    );
+    await persist(updated);
+    const found = updated.find(a => a.id === id);
+    if (found) await pushToRemote(found, 'PUT', `/api/accounts/${id}`);
+  }, [accounts]);
+
   const syncWithRemote = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
@@ -120,8 +142,9 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        setAccounts(remote);
-        await saveAccounts(remote);
+        const migrated = remote.map(a => ({ pinned: false, ...a }));
+        setAccounts(migrated);
+        await saveAccounts(migrated);
       }
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
@@ -139,13 +162,9 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
         a.issuer.toLowerCase().includes(q)
       );
     }
-    result.sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'issuer') return a.issuer.localeCompare(b.issuer);
-      if (sortBy === 'createdAt') return b.createdAt.localeCompare(a.createdAt);
-      return 0;
-    });
-    return result;
+    const pinned = sortAccounts(result.filter(a => a.pinned), sortBy);
+    const unpinned = sortAccounts(result.filter(a => !a.pinned), sortBy);
+    return [...pinned, ...unpinned];
   }, [accounts, searchQuery, sortBy]);
 
   return (
@@ -154,6 +173,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       searchQuery, sortBy,
       setSearchQuery, setSortBy,
       addAccount, updateAccount, deleteAccount,
+      togglePin,
       syncWithRemote, isSyncing, syncError,
     }}>
       {children}

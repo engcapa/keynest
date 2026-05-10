@@ -18,3 +18,54 @@ expo-env.d.ts
 # @end expo-cli
 
 attached_assets
+
+# Build output
+build/
+out/
+release/
+
+# Code agent / AI tool caches and state
+.aider*
+.claude/
+.cursor/
+.copilot/
+.codeium/
+.continue/
+.tabnine/
+.local/
+.agents/
+.cache/
+*.agent-state
+*.agent-cache
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# TypeScript build
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Android build artifacts (keep sources, ignore compiled output)
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# iOS build artifacts
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# Server standalone binaries (built by CI)
+keynest-server-*

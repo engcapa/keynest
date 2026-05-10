@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   Alert, Platform, Animated,
@@ -42,10 +42,43 @@ const timerStyles = StyleSheet.create({
   fill: { height: 2, borderRadius: 1 },
 });
 
+function CopiedBadge({ visible }: { visible: boolean }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+        Animated.delay(800),
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  return (
+    <Animated.View style={[badgeStyles.badge, { opacity }]} pointerEvents="none">
+      <Ionicons name="checkmark-circle" size={13} color={Colors.accent} />
+      <Text style={badgeStyles.text}>Copied</Text>
+    </Animated.View>
+  );
+}
+
+const badgeStyles = StyleSheet.create({
+  badge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.accentDim, borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+    position: 'absolute', right: 0, top: -2,
+  },
+  text: { fontSize: 12, color: Colors.accent, fontWeight: '600' },
+});
+
 export default function AccountCard({ account }: AccountCardProps) {
   const [code, setCode] = useState(() => generateCode(account));
   const [remaining, setRemaining] = useState(() => getTimeRemaining(account.period));
-  const { deleteAccount } = useAccounts();
+  const [copyKey, setCopyKey] = useState(0);
+  const [showSecret, setShowSecret] = useState(false);
+  const { deleteAccount, togglePin } = useAccounts();
   const avatarColor = getAvatarColor(account.name);
   const initials = getInitials(account.name);
   const isLow = remaining <= 5;
@@ -65,15 +98,24 @@ export default function AccountCard({ account }: AccountCardProps) {
       if (Platform.OS !== 'web') {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
+      const raw = code.replace(/\s/g, '');
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(code.replace(/\s/g, ''));
+        await navigator.clipboard.writeText(raw);
       }
+      setCopyKey(k => k + 1);
     } catch { /* ignore */ }
   }, [code]);
 
   const handleEdit = useCallback(() => {
     router.push(`/edit/${account.id}` as any);
   }, [account.id]);
+
+  const handlePin = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await togglePin(account.id);
+  }, [account.id, togglePin]);
 
   const handleDelete = useCallback(() => {
     const doDelete = () => {
@@ -93,19 +135,35 @@ export default function AccountCard({ account }: AccountCardProps) {
     }
   }, [account, deleteAccount]);
 
+  const formatSecret = (s: string) => {
+    return s.replace(/(.{4})/g, '$1 ').trim();
+  };
+
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, account.pinned && styles.cardPinned]}>
       <View style={styles.row}>
         <View style={[styles.avatar, { backgroundColor: avatarColor + '33' }]}>
           <Text style={[styles.avatarText, { color: avatarColor }]}>{initials}</Text>
         </View>
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>{account.name}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>{account.name}</Text>
+            {account.pinned && (
+              <Ionicons name="pin" size={11} color={Colors.primary} style={styles.pinBadge} />
+            )}
+          </View>
           {account.issuer ? (
             <Text style={styles.issuer} numberOfLines={1}>{account.issuer}</Text>
           ) : null}
         </View>
         <View style={styles.actions}>
+          <TouchableOpacity onPress={handlePin} style={styles.iconBtn} hitSlop={8}>
+            <Ionicons
+              name={account.pinned ? 'pin' : 'pin-outline'}
+              size={18}
+              color={account.pinned ? Colors.primary : Colors.textSecondary}
+            />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleCopy} style={styles.iconBtn} hitSlop={8}>
             <Ionicons name="copy-outline" size={18} color={Colors.textSecondary} />
           </TouchableOpacity>
@@ -118,22 +176,39 @@ export default function AccountCard({ account }: AccountCardProps) {
         </View>
       </View>
 
-      <TouchableOpacity onPress={handleCopy} activeOpacity={0.7}>
-        <Text style={[styles.code, isLow && styles.codeLow]}>
-          {formatCode(code)}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.codeWrap}>
+        <TouchableOpacity onPress={handleCopy} activeOpacity={0.7} style={styles.codeTouchable}>
+          <Text style={[styles.code, isLow && styles.codeLow]}>
+            {formatCode(code)}
+          </Text>
+        </TouchableOpacity>
+        <CopiedBadge key={copyKey} visible={copyKey > 0} />
+      </View>
 
       <View style={styles.footer}>
         <Text style={[styles.meta, isLow && { color: Colors.danger }]}>
           {account.type.toUpperCase()} · {account.algorithm} · {remaining}s
         </Text>
-        <View style={styles.dotRow}>
+        <View style={styles.footerRight}>
+          <TouchableOpacity onPress={() => setShowSecret(v => !v)} style={styles.eyeBtn} hitSlop={8}>
+            <Ionicons
+              name={showSecret ? 'eye-off-outline' : 'eye-outline'}
+              size={16}
+              color={Colors.textMuted}
+            />
+          </TouchableOpacity>
           {account.type === 'totp' && (
             <View style={[styles.dot, { backgroundColor: isLow ? Colors.danger : Colors.accent }]} />
           )}
         </View>
       </View>
+
+      {showSecret && (
+        <View style={styles.secretBox}>
+          <Text style={styles.secretLabel}>Secret Key</Text>
+          <Text style={styles.secretValue} selectable>{formatSecret(account.secret)}</Text>
+        </View>
+      )}
 
       {account.type === 'totp' && (
         <TimerBar period={account.period} isLow={isLow} />
@@ -151,6 +226,10 @@ const styles = StyleSheet.create({
     marginVertical: 6,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  cardPinned: {
+    borderColor: Colors.primary + '55',
+    backgroundColor: Colors.card,
   },
   row: {
     flexDirection: 'row',
@@ -172,10 +251,19 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
   name: {
     fontSize: 15,
     fontWeight: '600',
     color: Colors.text,
+    flexShrink: 1,
+  },
+  pinBadge: {
+    marginTop: 1,
   },
   issuer: {
     fontSize: 12,
@@ -184,10 +272,18 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 2,
   },
   iconBtn: {
     padding: 6,
+  },
+  codeWrap: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  codeTouchable: {
+    flex: 1,
   },
   code: {
     fontSize: 36,
@@ -205,17 +301,44 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 4,
   },
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   meta: {
     fontSize: 11,
     color: Colors.textMuted,
   },
-  dotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  eyeBtn: {
+    padding: 2,
   },
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+  },
+  secretBox: {
+    marginTop: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: Colors.radiusSm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  secretLabel: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  secretValue: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 1,
   },
 });

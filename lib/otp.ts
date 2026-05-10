@@ -14,6 +14,7 @@ export interface OTPAccount {
   period: number;
   type: OTPType;
   counter: number;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +33,7 @@ export function parseOtpUri(uri: string): Partial<OTPAccount> | null {
         period: totp.period || 30,
         type: 'totp',
         counter: 0,
+        pinned: false,
       };
     } else if (uri.startsWith('otpauth://hotp/')) {
       const hotp = OTPAuth.HOTP.parse(uri);
@@ -45,6 +47,7 @@ export function parseOtpUri(uri: string): Partial<OTPAccount> | null {
         period: 30,
         type: 'hotp',
         counter: hotp.counter || 0,
+        pinned: false,
       };
     }
     return null;
