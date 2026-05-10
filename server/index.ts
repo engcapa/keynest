@@ -9,13 +9,18 @@ import { initFromConfig } from './db';
 
 function resolveWebDist(): string | null {
   const candidates = [
-    path.resolve(process.cwd(), 'dist'),
     path.resolve(__dirname, '..', 'dist'),
     path.resolve(__dirname, 'dist'),
+    path.resolve(process.cwd(), 'dist'),
   ];
   for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+    try {
+      if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+    } catch {
+      // snapshot fs access can throw on some pkg versions; keep scanning
+    }
   }
+  console.warn(`[web] no dist/index.html found; tried:\n  ${candidates.join('\n  ')}`);
   return null;
 }
 

@@ -16,7 +16,8 @@
   "pkg": {
     "assets": [
       "dist/**/*"
-    ]
+    ],
+    "scripts": []
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.2.3",
