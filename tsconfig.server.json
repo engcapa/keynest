@@ -1,14 +1,17 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "server-dist",
     "rootDir": "server",
+    "target": "ES2020",
     "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "declaration": false,
+    "noEmit": false
   },
   "include": ["server/**/*"],
-  "exclude": ["node_modules", "app", "components", "contexts", "lib", "constants", "hooks"]
+  "exclude": ["node_modules"]
 }

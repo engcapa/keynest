@@ -50,6 +50,7 @@ Thumbs.db
 # TypeScript build
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+server-dist/
 
 # Logs
 *.log
