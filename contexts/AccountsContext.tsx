@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
-import { loadAccounts, saveAccounts, loadSettings } from '@/lib/storage';
+import { loadAccounts, saveAccounts } from '@/lib/storage';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
 import type { OTPAccount } from '@/lib/otp';
 
@@ -34,6 +34,15 @@ function sortAccounts(list: OTPAccount[], sortBy: SortBy): OTPAccount[] {
   });
 }
 
+async function probeSyncAvailable(): Promise<boolean> {
+  try {
+    const res = await apiRequest('GET', '/api/settings/status') as { dbConfigured?: boolean };
+    return !!res?.dbConfigured;
+  } catch {
+    return false;
+  }
+}
+
 export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<OTPAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,9 +50,13 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const syncAvailableRef = useRef(false);
 
   useEffect(() => {
-    loadLocal();
+    (async () => {
+      syncAvailableRef.current = await probeSyncAvailable();
+      await loadLocal();
+    })();
   }, []);
 
   const loadLocal = async () => {
@@ -53,17 +66,16 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       const migrated = local.map(a => ({ ...a, pinned: a.pinned ?? false }));
       setAccounts(migrated);
       if (Platform.OS === 'web') {
-        await syncFromRemote(migrated);
+        await syncFromRemote();
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const syncFromRemote = async (current: OTPAccount[]) => {
+  const syncFromRemote = async () => {
+    if (!syncAvailableRef.current) return;
     try {
-      const settings = await loadSettings();
-      if (!settings.mysqlEnabled && !settings.serverUrl) return;
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
         const migrated = remote.map(a => ({ ...a, pinned: a.pinned ?? false }));
@@ -85,9 +97,8 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const pushToRemote = async (account: OTPAccount, method: 'POST' | 'PUT', path: string) => {
+    if (!syncAvailableRef.current) return;
     try {
-      const settings = await loadSettings();
-      if (!settings.mysqlEnabled && !settings.serverUrl) return;
       await apiRequest(method, path, account);
     } catch {
       // offline - ignore
@@ -114,11 +125,9 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const deleteAccount = useCallback(async (id: string) => {
     const updated = accounts.filter(a => a.id !== id);
     await persist(updated);
+    if (!syncAvailableRef.current) return;
     try {
-      const settings = await loadSettings();
-      if (settings.mysqlEnabled || settings.serverUrl) {
-        await apiRequest('DELETE', `/api/accounts/${id}`);
-      }
+      await apiRequest('DELETE', `/api/accounts/${id}`);
     } catch { /* offline */ }
   }, [accounts]);
 
@@ -135,9 +144,12 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     setIsSyncing(true);
     setSyncError(null);
     try {
-      const settings = await loadSettings();
-      if (!settings.mysqlEnabled && !settings.serverUrl) {
-        setSyncError('Remote MySQL not configured');
+      if (!syncAvailableRef.current) {
+        // retry probe in case the server came online after initial load
+        syncAvailableRef.current = await probeSyncAvailable();
+      }
+      if (!syncAvailableRef.current) {
+        setSyncError('Remote sync not configured on the server');
         return;
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
