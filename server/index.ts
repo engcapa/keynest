@@ -1,27 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
 import accountsRouter from './routes/accounts';
 import settingsRouter from './routes/settings';
 import { loadConfig } from './config';
 import { initFromConfig } from './db';
+import { WEB_BUNDLE } from './web-bundle.generated';
 
-function resolveWebDist(): string | null {
-  const candidates = [
-    path.resolve(__dirname, '..', 'dist'),
-    path.resolve(__dirname, 'dist'),
-    path.resolve(process.cwd(), 'dist'),
-  ];
-  for (const dir of candidates) {
-    try {
-      if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
-    } catch {
-      // snapshot fs access can throw on some pkg versions; keep scanning
-    }
-  }
-  console.warn(`[web] no dist/index.html found; tried:\n  ${candidates.join('\n  ')}`);
-  return null;
+function sendBundled(res: express.Response, entry: { type: string; data: string }) {
+  const buf = Buffer.from(entry.data, 'base64');
+  res.setHeader('Content-Type', entry.type);
+  res.setHeader('Content-Length', buf.length.toString());
+  res.end(buf);
 }
 
 async function main() {
@@ -42,16 +31,26 @@ async function main() {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  const webDist = resolveWebDist();
+  const webKeys = Object.keys(WEB_BUNDLE);
+  const indexEntry = WEB_BUNDLE['/index.html'];
 
-  if (webDist) {
-    app.use(express.static(webDist, { index: 'index.html', extensions: ['html'] }));
+  if (indexEntry) {
+    app.get(/^\/(?!api\/|health$).*/, (req, res) => {
+      const pathname = decodeURIComponent(req.path);
 
-    app.get(/^\/(?!api\/|health$).*/, (_req, res) => {
-      res.sendFile(path.join(webDist, 'index.html'));
+      const direct = WEB_BUNDLE[pathname];
+      if (direct) return sendBundled(res, direct);
+
+      const asHtml = WEB_BUNDLE[pathname + '.html'];
+      if (asHtml) return sendBundled(res, asHtml);
+
+      const asIndex = WEB_BUNDLE[pathname.replace(/\/$/, '') + '/index.html'];
+      if (asIndex) return sendBundled(res, asIndex);
+
+      sendBundled(res, indexEntry);
     });
 
-    console.log(`Serving web app from ${webDist}`);
+    console.log(`Serving web app from bundled assets (${webKeys.length} files)`);
   } else {
     app.get('/', (_, res) => {
       res.send(`
@@ -85,7 +84,7 @@ async function main() {
               <li>GET /api/settings/status — sync availability</li>
               <li>GET /health — health check</li>
             </ul>
-            <p class="hint">Run <code>npm run build:web</code> to bundle the web app into this server.</p>
+            <p class="hint">Run <code>npm run build:web</code> then <code>npm run bundle:web</code> to embed the web app.</p>
           </div>
         </body>
         </html>

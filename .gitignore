@@ -51,6 +51,7 @@ Thumbs.db
 tsconfig.tsbuildinfo
 *.tsbuildinfo
 server-dist/
+server/web-bundle.generated.ts
 
 # Logs
 *.log
