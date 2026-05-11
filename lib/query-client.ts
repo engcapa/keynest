@@ -7,11 +7,11 @@ const TOKEN_STORAGE_KEY = 'mfa_vault_server_token';
 export function getApiUrl(): string {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined') {
-      const { protocol, hostname, port } = window.location;
-      if (port && port !== '8081') {
-        return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+      const { hostname, port, origin } = window.location;
+      if (port === '8081') {
+        return `${window.location.protocol}//${hostname}:${SERVER_PORT}`;
       }
-      return `${protocol}//${hostname}:${SERVER_PORT}`;
+      return origin;
     }
     return `http://localhost:${SERVER_PORT}`;
   }
