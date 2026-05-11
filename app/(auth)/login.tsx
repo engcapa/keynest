@@ -13,7 +13,7 @@ import { Tooltip } from '@/components/Tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
-  const { isAuthenticated, hasPassword, login, setupPassword } = useAuth();
+  const { isAuthenticated, hasPassword, login, setupPassword, loginAnonymous } = useAuth();
   const insets = useSafeAreaInsets();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -22,7 +22,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  if (isAuthenticated && hasPassword) {
+  if (isAuthenticated) {
     return <Redirect href="/(tabs)" />;
   }
 
@@ -138,6 +138,21 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
           </Tooltip>
+
+          {Platform.OS === 'web' && (
+            <Tooltip label="Skip password. Accounts are kept on this device only and never pushed to the server.">
+              <TouchableOpacity
+                style={styles.anonBtn}
+                onPress={loginAnonymous}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Continue offline"
+              >
+                <Ionicons name="cloud-offline-outline" size={16} color={Colors.textSecondary} style={{ marginRight: 6 }} />
+                <Text style={styles.anonBtnText}>Continue offline</Text>
+              </TouchableOpacity>
+            </Tooltip>
+          )}
         </Animated.View>
       </View>
     </KeyboardAvoidingView>
@@ -174,4 +189,9 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700', fontFamily: 'Inter_700Bold' },
+  anonBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    height: 44, marginTop: 8,
+  },
+  anonBtnText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
 });

@@ -17,6 +17,7 @@ export interface OTPAccount {
   pinned: boolean;
   createdAt: string;
   updatedAt: string;
+  syncedAt?: string;
 }
 
 export function parseOtpUri(uri: string): Partial<OTPAccount> | null {
@@ -117,6 +118,32 @@ export function getTimeProgress(period: number = 30): number {
 
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+export async function deterministicId(params: {
+  secret: string;
+  algorithm: OTPAlgorithm;
+  type: OTPType;
+  digits: 6 | 8;
+  period: number;
+}): Promise<string> {
+  const normalizedSecret = (params.secret || '').replace(/\s/g, '').toUpperCase();
+  const input = `${normalizedSecret}|${params.algorithm}|${params.type}|${params.digits}|${params.period}`;
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(input));
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hex.slice(0, 32);
+  }
+  let h1 = 5381;
+  let h2 = 52711;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    h1 = (((h1 << 5) + h1) ^ c) >>> 0;
+    h2 = (((h2 << 5) + h2) + c) >>> 0;
+  }
+  return (h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')).repeat(2).slice(0, 32);
 }
 
 export function getAvatarColor(name: string): string {

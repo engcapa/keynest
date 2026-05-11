@@ -7,12 +7,16 @@ A professional multi-factor authentication (MFA) app that works as both an Andro
 - **TOTP & HOTP support** — compatible with Google Authenticator and all standard OTP algorithms (SHA1, SHA256, SHA512)
 - **QR code scanning** — scan `otpauth://` QR codes on Android to add accounts instantly
 - **Manual entry** — add accounts by entering the secret key and configuring parameters
+- **Deterministic IDs** — account IDs are a SHA-256 of `secret|algorithm|type|digits|period`, so the same account added on web and Android resolves to a single row on the server
 - **Pin / Top accounts** — pin multiple accounts to the top of the list; pinned accounts are sorted among themselves by the active sort rule
 - **Tap to copy** — tap the OTP code to copy it to the clipboard, with visual confirmation
 - **View secret key** — reveal the raw Base32 secret for any account directly in the card
 - **Local storage** — accounts saved in AsyncStorage for fully offline use on mobile
 - **MySQL sync** — optionally connect a remote MySQL database for backup and multi-device access
-- **Password protection** — app requires a password on every open
+- **Per-account remote push** — each card has a cloud button that saves one account to the server; its icon shows sync state (synced / local-change-pending / never-synced / unavailable)
+- **Password protection** — server-managed password on web, local password on Android
+- **Anonymous web mode** — a "Continue offline" option on the login screen skips the server password and keeps accounts local-only
+- **Idle auto-lock** — configurable idle timeout (1/5/10/15/30/60 minutes or Never, default 5) locks the app when inactive
 - **Search & sort** — find accounts quickly; sort by name, issuer, or date added
 - **Rename & delete** — full CRUD management of accounts
 - **Live countdown** — real-time timer and progress bar showing when each OTP code refreshes
@@ -104,8 +108,9 @@ Example file:
 **Web login flow.** When the web app is served from the Express server, login is enforced server-side:
 
 1. On first visit, if `auth.passwordHash` is `null`, the UI shows a setup screen. The password is hashed client-side (SHA-256) and sent to `POST /api/auth/setup`, which persists the hash to `keynest.config.json`.
-2. Subsequent visitors hit the login screen and authenticate via `POST /api/auth/login`. The server returns a bearer token (7-day TTL, kept in memory only) that the client stores in `sessionStorage` and sends as `Authorization: Bearer <token>` on every API call.
-3. To reset the password, stop the server, delete the `auth.passwordHash` field (or set it to `null`), and restart — the next visitor re-runs the setup flow. To change it while logged in, use the Settings screen (calls `POST /api/auth/change`).
+2. Subsequent visitors hit the login screen and authenticate via `POST /api/auth/login`. The server returns a bearer token (7-day TTL, kept in memory only) that the client stores in `localStorage` and sends as `Authorization: Bearer <token>` on every API call. Closing the tab does not drop the session; clear browser storage to force re-login.
+3. The login screen also offers a **Continue offline** option that skips the server entirely and keeps accounts in the browser only — useful when the server is unreachable or when you just want to try the app. This mode disables remote sync and the idle auto-lock.
+4. To reset the password, stop the server, delete the `auth.passwordHash` field (or set it to `null`), and restart — the next visitor re-runs the setup flow. To change it while logged in, use the Settings screen (calls `POST /api/auth/change`).
 
 The Android app manages its password locally via expo-secure-store and does not use these endpoints.
 
@@ -155,28 +160,39 @@ server/
 ## MySQL Schema
 
 The backend auto-creates the `mfa_accounts` table on startup when MySQL is configured. If you
-prefer to provision the schema manually, run this on your MySQL server:
+prefer to provision the schema manually, run this on your MySQL 8.0+ server:
 
 ```sql
-CREATE DATABASE IF NOT EXISTS keynest;
+CREATE DATABASE IF NOT EXISTS keynest
+  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 USE keynest;
 
 CREATE TABLE IF NOT EXISTS mfa_accounts (
-  id          VARCHAR(64)  NOT NULL PRIMARY KEY,
-  uri         TEXT         NOT NULL,
-  name        VARCHAR(255) NOT NULL,
-  issuer      VARCHAR(255) DEFAULT '',
-  secret      VARCHAR(512) NOT NULL,
-  algorithm   VARCHAR(10)  DEFAULT 'SHA1',
-  digits      INT          DEFAULT 6,
-  period      INT          DEFAULT 30,
-  type        VARCHAR(10)  DEFAULT 'totp',
-  counter     INT          DEFAULT 0,
-  pinned      TINYINT(1)   DEFAULT 0,
-  created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+  id          CHAR(32)        CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+  uri         TEXT            NOT NULL,
+  name        VARCHAR(255)    NOT NULL,
+  issuer      VARCHAR(255)    NOT NULL DEFAULT '',
+  secret      VARCHAR(128)    NOT NULL,
+  algorithm   ENUM('SHA1','SHA256','SHA512') NOT NULL DEFAULT 'SHA1',
+  digits      TINYINT UNSIGNED NOT NULL DEFAULT 6,
+  period      SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+  type        ENUM('totp','hotp') NOT NULL DEFAULT 'totp',
+  counter     INT UNSIGNED    NOT NULL DEFAULT 0,
+  pinned      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT chk_digits CHECK (digits IN (6, 8)),
+  INDEX idx_pinned_name (pinned, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
+
+**Notes on the schema**
+
+- `id` is a 32-character lowercase hex derived from `SHA-256(secret|algorithm|type|digits|period)`. Two clients adding the same OTP secret produce identical IDs, so the same row is updated on both.
+- `algorithm` and `type` are ENUMs to reject invalid values at the DB layer.
+- The `CHECK (digits IN (6, 8))` constraint is enforced on MySQL 8.0.16+. On MySQL 5.7 the clause is parsed but ignored; the app still validates at the client and route layer.
+- `idx_pinned_name` matches the `ORDER BY pinned DESC, name ASC` query that powers the accounts list.
+- For MySQL 5.7 or older MariaDB, substitute `utf8mb4_unicode_ci` for `utf8mb4_0900_ai_ci`.
 
 ## Running the backend in production
 

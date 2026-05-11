@@ -27,6 +27,20 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  app.use((req, res, next) => {
+    const start = Date.now();
+    const method = req.method;
+    const originalUrl = req.originalUrl;
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      const line = `[${new Date().toISOString()}] ${method} ${originalUrl} → ${res.statusCode} (${ms}ms)`;
+      if (res.statusCode >= 500) console.error(line);
+      else if (res.statusCode >= 400) console.warn(line);
+      else console.log(line);
+    });
+    next();
+  });
+
   const authStore = new AuthStore(cfg.configPath);
   authStore.load({ passwordHash: cfg.auth.passwordHash });
   const requireAuth = createAuthMiddleware(authStore);

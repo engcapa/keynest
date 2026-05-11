@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import { Tooltip } from '@/components/Tooltip';
 import { useAccounts } from '@/contexts/AccountsContext';
-import { generateId, buildOtpUri, parseOtpUri } from '@/lib/otp';
+import { deterministicId, buildOtpUri, parseOtpUri } from '@/lib/otp';
 import type { OTPAccount, OTPAlgorithm, OTPType } from '@/lib/otp';
 
 const ALGORITHMS: OTPAlgorithm[] = ['SHA1', 'SHA256', 'SHA512'];
@@ -70,16 +70,28 @@ export default function AddScreen() {
       const parsed = parseOtpUri(raw);
       if (!parsed) { setError('Invalid OTP URI format'); return; }
       if (accounts.some(a => a.uri === raw)) { setError('This account already exists'); return; }
+      const parsedAlgorithm = parsed.algorithm || 'SHA1';
+      const parsedDigits = parsed.digits || 6;
+      const parsedPeriod = parsed.period || 30;
+      const parsedType = parsed.type || 'totp';
+      const id = await deterministicId({
+        secret: parsed.secret || '',
+        algorithm: parsedAlgorithm,
+        type: parsedType,
+        digits: parsedDigits,
+        period: parsedPeriod,
+      });
+      if (accounts.some(a => a.id === id)) { setError('This account already exists'); return; }
       account = {
-        id: generateId(),
+        id,
         uri: raw,
         name: parsed.name || autoName(),
         issuer: parsed.issuer || '',
         secret: parsed.secret || '',
-        algorithm: parsed.algorithm || 'SHA1',
-        digits: parsed.digits || 6,
-        period: parsed.period || 30,
-        type: parsed.type || 'totp',
+        algorithm: parsedAlgorithm,
+        digits: parsedDigits,
+        period: parsedPeriod,
+        type: parsedType,
         counter: parsed.counter || 0,
         pinned: false,
         createdAt: new Date().toISOString(),
@@ -98,8 +110,12 @@ export default function AddScreen() {
         counter: parseInt(counter) || 0,
       });
       if (accounts.some(a => a.uri === uri)) { setError('This account already exists'); return; }
+      const id = await deterministicId({
+        secret: cleanSecret, algorithm, type, digits, period,
+      });
+      if (accounts.some(a => a.id === id)) { setError('This account already exists'); return; }
       account = {
-        id: generateId(),
+        id,
         uri,
         name: displayName,
         issuer: issuer.trim(),

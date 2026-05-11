@@ -23,6 +23,9 @@ export function getApiUrl(): string {
 function webStorage(): Storage | null {
   if (Platform.OS !== 'web') return null;
   try {
+    if (typeof localStorage !== 'undefined') return localStorage;
+  } catch { /* ignore */ }
+  try {
     if (typeof sessionStorage !== 'undefined') return sessionStorage;
   } catch { /* ignore */ }
   return null;
@@ -74,20 +77,27 @@ export async function apiRequest(
   body?: unknown
 ): Promise<unknown> {
   const url = new URL(path, getApiUrl()).toString();
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    console.error(`[api] ${method} ${path} network error:`, e);
+    throw e;
+  }
   if (response.status === 401) {
     setAuthToken(null);
     throw new AuthRequiredError();
   }
   if (!response.ok) {
     const error = await response.text();
+    console.error(`[api] ${method} ${path} → ${response.status}`, error);
     throw new Error(error || `HTTP error ${response.status}`);
   }
   if (response.status === 204) return null;

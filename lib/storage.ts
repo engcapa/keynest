@@ -6,6 +6,12 @@ import type { OTPAccount } from './otp';
 const ACCOUNTS_KEY = 'mfa_vault_accounts';
 const PASSWORD_KEY = 'mfa_vault_password';
 const MYSQL_CFG_KEY = 'mfa_vault_mysql_cfg';
+const IDLE_LOCK_KEY = 'mfa_vault_idle_lock_minutes';
+
+export const DEFAULT_IDLE_LOCK_MINUTES = 5;
+export const IDLE_LOCK_OPTIONS: number[] = [1, 5, 10, 15, 30, 60, 0];
+
+const idleLockListeners = new Set<(minutes: number) => void>();
 
 export type MysqlSslMode = 'REQUIRED' | 'DISABLED';
 
@@ -133,4 +139,31 @@ export async function setMysqlConfig(cfg: MysqlConfig): Promise<void> {
 
 export async function clearMysqlConfig(): Promise<void> {
   await secureDelete(MYSQL_CFG_KEY);
+}
+
+export async function getIdleLockMinutes(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(IDLE_LOCK_KEY);
+    if (raw === null) return DEFAULT_IDLE_LOCK_MINUTES;
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_IDLE_LOCK_MINUTES;
+    return IDLE_LOCK_OPTIONS.includes(n) ? n : DEFAULT_IDLE_LOCK_MINUTES;
+  } catch {
+    return DEFAULT_IDLE_LOCK_MINUTES;
+  }
+}
+
+export async function setIdleLockMinutes(minutes: number): Promise<void> {
+  const normalized = IDLE_LOCK_OPTIONS.includes(minutes) ? minutes : DEFAULT_IDLE_LOCK_MINUTES;
+  try {
+    await AsyncStorage.setItem(IDLE_LOCK_KEY, String(normalized));
+  } catch { /* ignore */ }
+  for (const fn of idleLockListeners) {
+    try { fn(normalized); } catch { /* ignore */ }
+  }
+}
+
+export function subscribeIdleLockMinutes(fn: (minutes: number) => void): () => void {
+  idleLockListeners.add(fn);
+  return () => { idleLockListeners.delete(fn); };
 }

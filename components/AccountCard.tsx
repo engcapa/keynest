@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, Platform, Animated,
+  Alert, Platform, Animated, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -79,10 +79,34 @@ export default function AccountCard({ account }: AccountCardProps) {
   const [remaining, setRemaining] = useState(() => getTimeRemaining(account.period));
   const [copyKey, setCopyKey] = useState(0);
   const [showSecret, setShowSecret] = useState(false);
-  const { deleteAccount, togglePin } = useAccounts();
+  const [pushing, setPushing] = useState(false);
+  const { deleteAccount, togglePin, pushOneToRemote, canSyncRemote } = useAccounts();
   const avatarColor = getAvatarColor(account.name);
   const initials = getInitials(account.name);
   const isLow = remaining <= 5;
+
+  const syncState: 'synced' | 'pending' | 'never' | 'unavailable' =
+    !canSyncRemote ? 'unavailable' :
+    !account.syncedAt ? 'never' :
+    account.syncedAt === account.updatedAt ? 'synced' :
+    'pending';
+
+  const syncIcon =
+    syncState === 'synced' ? 'cloud-done-outline' :
+    syncState === 'pending' ? 'cloud-upload-outline' :
+    'cloud-offline-outline';
+
+  const syncColor =
+    syncState === 'synced' ? Colors.accent :
+    syncState === 'pending' ? Colors.primary :
+    syncState === 'never' ? Colors.textSecondary :
+    Colors.textMuted;
+
+  const syncTooltip =
+    syncState === 'unavailable' ? 'Remote sync unavailable' :
+    syncState === 'synced' ? 'Saved to remote' :
+    syncState === 'pending' ? 'Save changes to remote' :
+    'Save to remote (never synced)';
 
   useEffect(() => {
     const update = () => {
@@ -117,6 +141,24 @@ export default function AccountCard({ account }: AccountCardProps) {
     }
     await togglePin(account.id);
   }, [account.id, togglePin]);
+
+  const handlePush = useCallback(async () => {
+    if (pushing || syncState === 'unavailable' || syncState === 'synced') return;
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setPushing(true);
+    const res = await pushOneToRemote(account.id);
+    setPushing(false);
+    if (!res.ok) {
+      const msg = res.error || 'Push failed';
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(`Save to remote failed\n\n${msg}`);
+      } else {
+        Alert.alert('Save to Remote Failed', msg);
+      }
+    }
+  }, [account.id, pushOneToRemote, pushing, syncState]);
 
   const handleDelete = useCallback(() => {
     const doDelete = () => {
@@ -165,6 +207,21 @@ export default function AccountCard({ account }: AccountCardProps) {
                 size={18}
                 color={account.pinned ? Colors.primary : Colors.textSecondary}
               />
+            </TouchableOpacity>
+          </Tooltip>
+          <Tooltip label={syncTooltip}>
+            <TouchableOpacity
+              onPress={handlePush}
+              style={styles.iconBtn}
+              hitSlop={8}
+              disabled={pushing || syncState === 'unavailable' || syncState === 'synced'}
+              accessibilityRole="button"
+              accessibilityLabel={syncTooltip}
+            >
+              {pushing
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Ionicons name={syncIcon as any} size={18} color={syncColor} />
+              }
             </TouchableOpacity>
           </Tooltip>
           <Tooltip label="Copy current code">

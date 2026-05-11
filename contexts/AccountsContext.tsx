@@ -27,7 +27,7 @@ interface AccountsContextType {
   deleteAccount: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   syncWithRemote: () => Promise<void>;
-  pushAllToRemote: () => Promise<{ pushed: number; failed: number } | null>;
+  pushOneToRemote: (id: string) => Promise<{ ok: boolean; error?: string }>;
   isSyncing: boolean;
   syncError: string | null;
   lastSyncAt: string | null;
@@ -67,7 +67,7 @@ export function mergeById(local: OTPAccount[], remote: OTPAccount[]): {
   toPush: OTPAccount[];
 } {
   const byId = new Map<string, OTPAccount>();
-  for (const a of remote) byId.set(a.id, a);
+  for (const a of remote) byId.set(a.id, { ...a, syncedAt: a.updatedAt });
   const toPush: OTPAccount[] = [];
   for (const l of local) {
     const r = byId.get(l.id);
@@ -118,9 +118,12 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
             try {
               const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
               if (Array.isArray(remote)) {
-                setAccounts(migrateLocal(remote));
+                const { merged } = mergeById(local, remote);
+                const normalized = migrateLocal(merged);
+                setAccounts(normalized);
+                await saveAccounts(normalized);
               }
-            } catch { /* offline */ }
+            } catch (e) { console.error('[sync] initial pull failed', e); }
           }
           return;
         }
@@ -145,12 +148,15 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     try {
       const remote = await fetchAccountsFromMysql(cfg);
       const { merged, toPush } = mergeById(localBase, remote);
-      const normalized = migrateLocal(merged);
+      let normalized = migrateLocal(merged);
+      for (const a of toPush) {
+        try {
+          await pushAccountToMysql(cfg, a);
+          normalized = normalized.map(x => x.id === a.id ? { ...x, syncedAt: a.updatedAt } : x);
+        } catch { /* best-effort */ }
+      }
       setAccounts(normalized);
       await saveAccounts(normalized);
-      for (const a of toPush) {
-        try { await pushAccountToMysql(cfg, a); } catch { /* best-effort */ }
-      }
       setLastSyncAt(new Date().toISOString());
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
@@ -161,17 +167,26 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
 
   const persistLocal = async (updated: OTPAccount[]) => {
     setAccounts(updated);
-    if (Platform.OS !== 'web') {
-      await saveAccounts(updated);
-    }
+    await saveAccounts(updated);
+  };
+
+  const markSynced = (id: string, syncedAt: string) => {
+    const list = accountsRef.current.map(a => a.id === id ? { ...a, syncedAt } : a);
+    setAccounts(list);
+    void saveAccounts(list);
   };
 
   const pushMutation = async (kind: 'upsert' | 'delete', payload: OTPAccount | string) => {
     if (syncStrategy === 'android-jdbc' && mysqlConfig) {
       try {
-        if (kind === 'upsert') await pushAccountToMysql(mysqlConfig, payload as OTPAccount);
-        else await deleteAccountFromMysql(mysqlConfig, payload as string);
-      } catch { /* best-effort */ }
+        if (kind === 'upsert') {
+          const acc = payload as OTPAccount;
+          await pushAccountToMysql(mysqlConfig, acc);
+          markSynced(acc.id, acc.updatedAt);
+        } else {
+          await deleteAccountFromMysql(mysqlConfig, payload as string);
+        }
+      } catch (e) { console.error('[sync] jdbc mutation failed', e); }
       return;
     }
     if (syncStrategy === 'web-http') {
@@ -179,12 +194,62 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
         if (kind === 'upsert') {
           const acc = payload as OTPAccount;
           await apiRequest('POST', '/api/accounts', acc);
+          markSynced(acc.id, acc.updatedAt);
         } else {
           await apiRequest('DELETE', `/api/accounts/${payload as string}`);
         }
-      } catch { /* offline */ }
+      } catch (e) { console.error('[sync] http mutation failed', e); }
     }
   };
+
+  const pushOneToRemote = useCallback(async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    const acc = accountsRef.current.find(a => a.id === id);
+    if (!acc) return { ok: false, error: 'Account not found' };
+
+    if (canJdbc) {
+      const cfg = mysqlConfig ?? await getMysqlConfig();
+      if (!cfg) {
+        const msg = 'No MySQL config saved';
+        setSyncError(msg);
+        return { ok: false, error: msg };
+      }
+      if (!mysqlConfig) setMysqlConfigState(cfg);
+      try {
+        await pushAccountToMysql(cfg, acc);
+        markSynced(acc.id, acc.updatedAt);
+        return { ok: true };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Push failed';
+        setSyncError(msg);
+        return { ok: false, error: msg };
+      }
+    }
+
+    if (Platform.OS === 'web') {
+      if (!webSyncAvailableRef.current) {
+        webSyncAvailableRef.current = await probeWebSync();
+      }
+      if (!webSyncAvailableRef.current) {
+        const msg = 'Remote sync not configured on the server';
+        setSyncError(msg);
+        return { ok: false, error: msg };
+      }
+      try {
+        await apiRequest('POST', '/api/accounts', acc);
+        markSynced(acc.id, acc.updatedAt);
+        return { ok: true };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Push failed';
+        setSyncError(msg);
+        return { ok: false, error: msg };
+      }
+    }
+
+    const msg = 'No remote backend available';
+    setSyncError(msg);
+    return { ok: false, error: msg };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canJdbc, mysqlConfig]);
 
   const addAccount = useCallback(async (account: OTPAccount) => {
     const withPin = { ...account, pinned: account.pinned ?? false };
@@ -247,57 +312,14 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        const migrated = migrateLocal(remote);
-        setAccounts(migrated);
-        await saveAccounts(migrated);
+        const { merged } = mergeById(accountsRef.current, remote);
+        const normalized = migrateLocal(merged);
+        setAccounts(normalized);
+        await saveAccounts(normalized);
         setLastSyncAt(new Date().toISOString());
       }
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [canJdbc, mysqlConfig]);
-
-  const pushAllToRemote = useCallback(async (): Promise<{ pushed: number; failed: number } | null> => {
-    const local = accountsRef.current;
-    setIsSyncing(true);
-    setSyncError(null);
-    let pushed = 0;
-    let failed = 0;
-    try {
-      if (canJdbc) {
-        const cfg = mysqlConfig ?? await getMysqlConfig();
-        if (!cfg) {
-          setSyncError('No MySQL config saved');
-          return null;
-        }
-        if (!mysqlConfig) setMysqlConfigState(cfg);
-        for (const a of local) {
-          try { await pushAccountToMysql(cfg, a); pushed++; } catch { failed++; }
-        }
-        setLastSyncAt(new Date().toISOString());
-        return { pushed, failed };
-      }
-      if (Platform.OS === 'web') {
-        if (!webSyncAvailableRef.current) {
-          webSyncAvailableRef.current = await probeWebSync();
-        }
-        if (!webSyncAvailableRef.current) {
-          setSyncError('Remote sync not configured on the server');
-          return null;
-        }
-        for (const a of local) {
-          try { await apiRequest('POST', '/api/accounts', a); pushed++; } catch { failed++; }
-        }
-        setLastSyncAt(new Date().toISOString());
-        return { pushed, failed };
-      }
-      setSyncError('No remote backend available');
-      return null;
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Push failed');
-      return null;
     } finally {
       setIsSyncing(false);
     }
@@ -345,7 +367,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       setSearchQuery, setSortBy,
       addAccount, updateAccount, deleteAccount,
       togglePin,
-      syncWithRemote, pushAllToRemote, isSyncing, syncError, lastSyncAt,
+      syncWithRemote, pushOneToRemote, isSyncing, syncError, lastSyncAt,
       mysqlConfig, saveMysqlConfig, removeMysqlConfig,
       syncStrategy, canSyncRemote,
     }}>
