@@ -21,6 +21,7 @@ export async function getPool(config: DBConfig): Promise<mysql.Pool> {
     database: config.database,
     user: config.user,
     password: config.password,
+    timezone: 'Z',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,

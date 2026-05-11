@@ -3,6 +3,12 @@ import { getActivePool } from '../db';
 
 const router = Router();
 
+function toMysqlDatetime(value: unknown): string {
+  const d = value ? new Date(value as string) : new Date();
+  const iso = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  return iso.slice(0, 19).replace('T', ' ');
+}
+
 router.get('/', async (req: Request, res: Response) => {
   const pool = getActivePool();
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
@@ -40,7 +46,7 @@ router.post('/', async (req: Request, res: Response) => {
       `INSERT INTO mfa_accounts (id, uri, name, issuer, secret, algorithm, digits, period, type, counter, pinned, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name=VALUES(name), issuer=VALUES(issuer), pinned=VALUES(pinned), updated_at=VALUES(updated_at)`,
-      [id, uri || '', name || 'Unknown', issuer || '', secret, algorithm || 'SHA1', digits || 6, period || 30, type || 'totp', counter || 0, pinned ? 1 : 0, createdAt, updatedAt]
+      [id, uri || '', name || 'Unknown', issuer || '', secret, algorithm || 'SHA1', digits || 6, period || 30, type || 'totp', counter || 0, pinned ? 1 : 0, toMysqlDatetime(createdAt), toMysqlDatetime(updatedAt)]
     );
     res.status(201).json({ ok: true });
   } catch (e: any) {
@@ -56,7 +62,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     await pool.execute(
       'UPDATE mfa_accounts SET name=?, issuer=?, pinned=?, updated_at=? WHERE id=?',
-      [name, issuer || '', pinned ? 1 : 0, updatedAt || new Date().toISOString(), req.params.id]
+      [name, issuer || '', pinned ? 1 : 0, toMysqlDatetime(updatedAt), req.params.id]
     );
     res.json({ ok: true });
   } catch (e: any) {
