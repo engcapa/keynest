@@ -105,7 +105,7 @@ private fun isoToTimestamp(value: String?): Timestamp {
   } catch (_: Throwable) {
     Instant.now()
   }
-  return Timestamp.from(instant)
+  return Timestamp(instant.toEpochMilli())
 }
 
 private fun toAccountMap(rs: ResultSet): Map<String, Any?> = mapOf(
