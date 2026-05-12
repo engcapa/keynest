@@ -10,6 +10,8 @@ import java.sql.SQLException
 import java.sql.Timestamp
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.util.Calendar
+import java.util.TimeZone
 
 private data class MysqlConnParams(
   val host: String,
@@ -94,6 +96,18 @@ private fun tsToIso(ts: Timestamp?): String {
   return DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ts.time))
 }
 
+private val UTC_CAL: Calendar get() = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+
+private fun isoToTimestamp(value: String?): Timestamp {
+  val iso = value?.takeIf { it.isNotEmpty() }
+  val instant = try {
+    if (iso != null) Instant.parse(iso) else Instant.now()
+  } catch (_: Throwable) {
+    Instant.now()
+  }
+  return Timestamp.from(instant)
+}
+
 private fun toAccountMap(rs: ResultSet): Map<String, Any?> = mapOf(
   "id" to rs.getString("id"),
   "uri" to (rs.getString("uri") ?: ""),
@@ -106,8 +120,8 @@ private fun toAccountMap(rs: ResultSet): Map<String, Any?> = mapOf(
   "type" to (rs.getString("type") ?: "totp"),
   "counter" to rs.getInt("counter"),
   "pinned" to (rs.getInt("pinned") == 1),
-  "createdAt" to tsToIso(rs.getTimestamp("created_at")),
-  "updatedAt" to tsToIso(rs.getTimestamp("updated_at")),
+  "createdAt" to tsToIso(rs.getTimestamp("created_at", UTC_CAL)),
+  "updatedAt" to tsToIso(rs.getTimestamp("updated_at", UTC_CAL)),
 )
 
 private fun bindAccount(ps: PreparedStatement, a: Map<String, Any?>) {
@@ -122,8 +136,8 @@ private fun bindAccount(ps: PreparedStatement, a: Map<String, Any?>) {
   ps.setString(9, (a["type"] as? String) ?: "totp")
   ps.setInt(10, ((a["counter"] as? Number)?.toInt()) ?: 0)
   ps.setInt(11, if (a["pinned"] as? Boolean == true) 1 else 0)
-  ps.setString(12, (a["createdAt"] as? String).orEmpty().ifEmpty { DateTimeFormatter.ISO_INSTANT.format(Instant.now()) })
-  ps.setString(13, (a["updatedAt"] as? String).orEmpty().ifEmpty { DateTimeFormatter.ISO_INSTANT.format(Instant.now()) })
+  ps.setTimestamp(12, isoToTimestamp(a["createdAt"] as? String), UTC_CAL)
+  ps.setTimestamp(13, isoToTimestamp(a["updatedAt"] as? String), UTC_CAL)
 }
 
 private const val SQL_UPSERT = """
