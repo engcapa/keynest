@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type { Pool } from 'mysql2/promise';
 import { getActivePool } from '../db';
 
 const router = Router();
@@ -9,11 +10,30 @@ function toMysqlDatetime(value: unknown): string {
   return iso.slice(0, 19).replace('T', ' ');
 }
 
+const DEAD_CONN_CODES = new Set([
+  'PROTOCOL_CONNECTION_LOST',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ER_CLIENT_INTERACTION_TIMEOUT',
+]);
+
+async function execWithRetry(pool: Pool, sql: string, params: any[]) {
+  try {
+    return await pool.execute(sql, params);
+  } catch (e: any) {
+    if (DEAD_CONN_CODES.has(e?.code) || /ETIMEDOUT|ECONNRESET|closed/i.test(e?.message ?? '')) {
+      return await pool.execute(sql, params);
+    }
+    throw e;
+  }
+}
+
 router.get('/', async (req: Request, res: Response) => {
   const pool = getActivePool();
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
-    const [rows] = await pool.execute('SELECT * FROM mfa_accounts ORDER BY pinned DESC, name ASC');
+    const [rows] = await execWithRetry(pool, 'SELECT * FROM mfa_accounts ORDER BY pinned DESC, name ASC', []);
     const accounts = (rows as any[]).map(r => ({
       id: r.id,
       uri: r.uri,
@@ -42,7 +62,8 @@ router.post('/', async (req: Request, res: Response) => {
   const { id, uri, name, issuer, secret, algorithm, digits, period, type, counter, pinned, createdAt, updatedAt } = req.body;
   if (!id || !secret) return res.status(400).json({ error: 'Missing required fields' });
   try {
-    await pool.execute(
+    await execWithRetry(
+      pool,
       `INSERT INTO mfa_accounts (id, uri, name, issuer, secret, algorithm, digits, period, type, counter, pinned, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name=VALUES(name), issuer=VALUES(issuer), pinned=VALUES(pinned), updated_at=VALUES(updated_at)`,
@@ -60,7 +81,8 @@ router.put('/:id', async (req: Request, res: Response) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { name, issuer, pinned, updatedAt } = req.body;
   try {
-    await pool.execute(
+    await execWithRetry(
+      pool,
       'UPDATE mfa_accounts SET name=?, issuer=?, pinned=?, updated_at=? WHERE id=?',
       [name, issuer || '', pinned ? 1 : 0, toMysqlDatetime(updatedAt), req.params.id]
     );
@@ -75,7 +97,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   const pool = getActivePool();
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
-    await pool.execute('DELETE FROM mfa_accounts WHERE id=?', [req.params.id]);
+    await execWithRetry(pool, 'DELETE FROM mfa_accounts WHERE id=?', [req.params.id]);
     res.status(204).send();
   } catch (e: any) {
     console.error('[accounts.DELETE]', e.message);
