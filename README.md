@@ -127,6 +127,31 @@ also auto-creates the `mfa_accounts` table on startup when MySQL is configured.
 > `keynest.config.json` is listed in `.gitignore` — never commit real credentials. Set the file
 > permissions to `600` on Linux/macOS so only the service user can read it.
 
+## Authentication & sync modes
+
+Key Nest runs on two clients (Web and Android APK), each with two operating modes
+(server-authenticated / offline). The four combinations behave differently — pick the row that
+matches your client and the column that matches your deployment.
+
+|                          | **Server-auth mode** (with remote sync)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | **Offline mode** (local only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|---|---|---|
+| **Web** <br/>(served from Express server) | Password is stored server-side as a SHA-256 hash in `keynest.config.json`. Login calls `POST /api/auth/login` and the server returns a 7-day bearer token kept in `localStorage`. Account data lives in MySQL; the browser keeps a `localStorage` cache of the last sync. On load, `AccountsContext` auto-pulls from `/api/accounts` and auto-pushes any local-only entries. Idle auto-lock is enabled. Logout clears the local cache and reloads the page so a different user on the same browser starts clean.                                              | Triggered by "Continue offline" on the login screen. Sets `localStorage.mfa_vault_anon=1`. No password. Account data lives only in `localStorage` (`mfa_vault_accounts`); zero outbound `/api/accounts` or `/api/settings` traffic — only one `/api/auth/status` probe at first boot, skipped on subsequent loads. Idle auto-lock is disabled. To exit, go to Settings → "Sign In with Server Password" — the page reloads and shows the server login screen. |
+| **Android APK**                            | Password is stored locally via `expo-secure-store` and verified client-side. Account data lives in AsyncStorage (primary) and is synced bidirectionally to a remote MySQL via the bundled `keynest-mysql` native module — the connection is JDBC-direct, **not** through the Express server. The user enters MySQL credentials in Settings (host, port, database, user, password, SSL mode). Initial sync runs automatically when `autoSync` is on; manual sync is also available. Idle auto-lock is enabled. Logout only locks the UI; local data is kept. | Default state out of the box — no MySQL configured. Password is stored locally via `expo-secure-store`. Accounts live only in AsyncStorage. No remote interaction at all. Idle auto-lock is enabled. Logout only locks the UI; local data is kept. To enable sync, fill in MySQL credentials in Settings.                                                                                                                                                       |
+
+### Quick reference — what differs
+
+| Property                 | Web server-auth                            | Web offline                  | APK server-auth                                | APK offline                  |
+|---|---|---|---|---|
+| Password storage         | Server (`keynest.config.json` hash)        | None                         | `expo-secure-store` (local)                    | `expo-secure-store` (local)  |
+| Account storage          | MySQL + `localStorage` cache               | `localStorage` only          | MySQL + AsyncStorage                           | AsyncStorage only            |
+| Auth mechanism           | Bearer token via Express                   | None                         | Local hash compare                             | Local hash compare           |
+| Remote backend           | Express + MySQL                            | None                         | Direct JDBC to MySQL                           | None                         |
+| Auto-sync on load        | Yes (pull + push local-only)               | No                           | Yes (when `autoSync` is on)                    | No                           |
+| Idle auto-lock           | Yes                                        | No                           | Yes                                            | Yes                          |
+| Cross-device sync        | Yes (any browser pointed at the server)    | No                           | Yes (any APK + same MySQL)                     | No                           |
+| Logout side effect       | Clears local cache + reloads page          | Just unlocks UI              | Just locks UI                                  | Just locks UI                |
+| How to switch modes      | "Lock App" → login again                   | Settings → "Sign In…"        | Remove MySQL config in Settings                | Add MySQL config in Settings |
+
 ## Project Structure
 
 ```
