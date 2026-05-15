@@ -64,6 +64,12 @@ export async function saveAccounts(accounts: OTPAccount[]): Promise<void> {
   } catch { /* ignore */ }
 }
 
+export async function clearAccounts(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(ACCOUNTS_KEY);
+  } catch { /* ignore */ }
+}
+
 export async function getPasswordHash(): Promise<string | null> {
   return secureGet(PASSWORD_KEY);
 }

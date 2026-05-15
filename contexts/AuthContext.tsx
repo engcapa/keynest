@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
-import { getPasswordHash, setPasswordHash, hashPassword, verifyPassword, getIdleLockMinutes, subscribeIdleLockMinutes } from '@/lib/storage';
+import { getPasswordHash, setPasswordHash, hashPassword, verifyPassword, getIdleLockMinutes, subscribeIdleLockMinutes, clearAccounts } from '@/lib/storage';
 import { apiRequest, getAuthToken, setAuthToken } from '@/lib/query-client';
 
 interface AuthContextType {
@@ -9,7 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAnonymous: boolean;
   login: (password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   setupPassword: (password: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<boolean>;
   loginAnonymous: () => void;
@@ -126,12 +126,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return ok;
   }, [authBackend]);
 
-  const logout = useCallback(() => {
-    if (authBackend === 'server' && !isAnonymous) {
+  const logout = useCallback(async () => {
+    const wasServerAuthed = authBackend === 'server' && !isAnonymous;
+    if (wasServerAuthed) {
       apiRequest('POST', '/api/auth/logout').catch(() => {});
       setAuthToken(null);
     }
     setWebFlag(ANON_STORAGE_KEY, false);
+    if (wasServerAuthed) {
+      // Clear cached account data so a different user on the same browser
+      // doesn't inherit the previous user's vault.
+      await clearAccounts();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.reload();
+        return;
+      }
+    }
     setIsAnonymous(false);
     setIsAuthenticated(false);
   }, [authBackend, isAnonymous]);

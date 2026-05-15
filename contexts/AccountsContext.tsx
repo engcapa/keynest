@@ -121,8 +121,16 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
               try {
                 const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
                 if (Array.isArray(remote)) {
-                  const { merged } = mergeById(local, remote);
-                  const normalized = migrateLocal(merged);
+                  const { merged, toPush } = mergeById(local, remote);
+                  let normalized = migrateLocal(merged);
+                  for (const a of toPush) {
+                    try {
+                      await apiRequest('POST', '/api/accounts', a);
+                      normalized = normalized.map(x => x.id === a.id ? { ...x, syncedAt: a.updatedAt } : x);
+                    } catch (e) {
+                      console.error('[sync] initial push failed for', a.id, e);
+                    }
+                  }
                   setAccounts(normalized);
                   await saveAccounts(normalized);
                 }
@@ -325,8 +333,16 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
       }
       const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
       if (Array.isArray(remote)) {
-        const { merged } = mergeById(accountsRef.current, remote);
-        const normalized = migrateLocal(merged);
+        const { merged, toPush } = mergeById(accountsRef.current, remote);
+        let normalized = migrateLocal(merged);
+        for (const a of toPush) {
+          try {
+            await apiRequest('POST', '/api/accounts', a);
+            normalized = normalized.map(x => x.id === a.id ? { ...x, syncedAt: a.updatedAt } : x);
+          } catch (e) {
+            console.error('[sync] push failed for', a.id, e);
+          }
+        }
         setAccounts(normalized);
         await saveAccounts(normalized);
         setLastSyncAt(new Date().toISOString());
