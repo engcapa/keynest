@@ -13,6 +13,7 @@ interface AuthContextType {
   setupPassword: (password: string) => Promise<void>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<boolean>;
   loginAnonymous: () => void;
+  exitAnonymous: () => Promise<void>;
   authBackend: 'local' | 'server';
 }
 
@@ -141,6 +142,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthBackend('local');
     setHasPassword(false);
     setIsAuthenticated(true);
+  }, []);
+
+  const exitAnonymous = useCallback(async () => {
+    setWebFlag(ANON_STORAGE_KEY, false);
+    setAuthToken(null);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // Reload so AccountsContext re-initializes against the server backend
+      // instead of carrying anonymous-mode local state into authenticated mode.
+      window.location.reload();
+      return;
+    }
+    setIsAnonymous(false);
+    setIsAuthenticated(false);
+    const hash = await getPasswordHash();
+    setHasPassword(!!hash);
   }, []);
 
   const setupPassword = useCallback(async (password: string) => {
@@ -279,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       isAuthenticated, hasPassword, isLoading, isAnonymous,
-      login, logout, setupPassword, changePassword, loginAnonymous,
+      login, logout, setupPassword, changePassword, loginAnonymous, exitAnonymous,
       authBackend,
     }}>
       {children}

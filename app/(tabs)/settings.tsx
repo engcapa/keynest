@@ -39,7 +39,7 @@ function formatWhen(iso: string | null): string {
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { logout, changePassword, isAnonymous } = useAuth();
+  const { logout, changePassword, isAnonymous, exitAnonymous } = useAuth();
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pwError, setPwError] = useState('');
@@ -106,10 +106,24 @@ export default function SettingsScreen() {
 
       <Section title="Security">
         {isAnonymous ? (
-          <Text style={styles.hint}>
-            Offline mode — no password is set on this device. Your accounts are kept locally only.
-            Lock this session from the Session card below, or log in with a password to enable auto-lock and remote sync.
-          </Text>
+          <>
+            <Text style={styles.hint}>
+              Offline mode — no password is set on this device. Your accounts are kept locally only.
+              Sign in with the server password to enable auto-lock and remote sync.
+            </Text>
+            <View style={{ height: 12 }} />
+            <Tooltip label="Leave offline mode and sign in with the server password">
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary]}
+                onPress={exitAnonymous}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with server password"
+              >
+                <Ionicons name="log-in-outline" size={16} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.btnText}>Sign In with Server Password</Text>
+              </TouchableOpacity>
+            </Tooltip>
+          </>
         ) : (
           <>
             <Text style={styles.sectionHint}>Change your app password</Text>
