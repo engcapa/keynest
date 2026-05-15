@@ -25,7 +25,7 @@ export default function AccountsScreen() {
   const {
     filteredAccounts, isLoading,
     searchQuery, sortBy, setSearchQuery, setSortBy,
-    syncWithRemote, isSyncing,
+    syncWithRemote, isSyncing, canSyncRemote,
   } = useAccounts();
   const [showSort, setShowSort] = useState(false);
 
@@ -55,21 +55,23 @@ export default function AccountsScreen() {
           <Text style={styles.count}>{filteredAccounts.length} account{filteredAccounts.length !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.headerActions}>
-          <Tooltip label="Pull from remote (sync down)">
-            <TouchableOpacity
-              onPress={handleSync}
-              style={styles.headerBtn}
-              hitSlop={8}
-              disabled={isSyncing}
-              accessibilityRole="button"
-              accessibilityLabel="Pull from remote"
-            >
-              {isSyncing
-                ? <ActivityIndicator size="small" color={Colors.primary} />
-                : <Ionicons name="cloud-download-outline" size={22} color={Colors.textSecondary} />
-              }
-            </TouchableOpacity>
-          </Tooltip>
+          {canSyncRemote && (
+            <Tooltip label="Pull from remote (sync down)">
+              <TouchableOpacity
+                onPress={handleSync}
+                style={styles.headerBtn}
+                hitSlop={8}
+                disabled={isSyncing}
+                accessibilityRole="button"
+                accessibilityLabel="Pull from remote"
+              >
+                {isSyncing
+                  ? <ActivityIndicator size="small" color={Colors.primary} />
+                  : <Ionicons name="cloud-download-outline" size={22} color={Colors.textSecondary} />
+                }
+              </TouchableOpacity>
+            </Tooltip>
+          )}
           <Tooltip label="Add new account">
             <TouchableOpacity
               onPress={handleAdd}

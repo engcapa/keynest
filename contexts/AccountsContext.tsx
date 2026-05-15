@@ -207,6 +207,11 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const pushOneToRemote = useCallback(async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    if (isAnonymous) {
+      const msg = 'Remote sync disabled in offline mode';
+      setSyncError(msg);
+      return { ok: false, error: msg };
+    }
     const acc = accountsRef.current.find(a => a.id === id);
     if (!acc) return { ok: false, error: 'Account not found' };
 
@@ -253,7 +258,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     setSyncError(msg);
     return { ok: false, error: msg };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canJdbc, mysqlConfig]);
+  }, [canJdbc, mysqlConfig, isAnonymous]);
 
   const addAccount = useCallback(async (account: OTPAccount) => {
     const withPin = { ...account, pinned: account.pinned ?? false };
@@ -292,6 +297,10 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   }, [syncStrategy, mysqlConfig]);
 
   const syncWithRemote = useCallback(async () => {
+    if (isAnonymous) {
+      setSyncError('Remote sync disabled in offline mode');
+      return;
+    }
     if (canJdbc) {
       const cfg = mysqlConfig ?? await getMysqlConfig();
       if (!cfg) {
@@ -327,7 +336,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSyncing(false);
     }
-  }, [canJdbc, mysqlConfig]);
+  }, [canJdbc, mysqlConfig, isAnonymous]);
 
   const saveMysqlConfig = useCallback(async (cfg: MysqlConfig) => {
     await setMysqlConfig(cfg);
