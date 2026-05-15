@@ -5,9 +5,11 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabsLayout() {
-  const { isAuthenticated, hasPassword } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  if (!isAuthenticated || !hasPassword) {
+  if (isLoading) return null;
+
+  if (!isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
   }
 

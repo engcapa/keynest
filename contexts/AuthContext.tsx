@@ -84,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const valid = await fetchSessionValid();
             setIsAuthenticated(valid);
           } else {
+            // No password configured yet — send user to setup screen (not authenticated).
             setIsAuthenticated(false);
           }
           setIsLoading(false);

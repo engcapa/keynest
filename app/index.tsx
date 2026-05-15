@@ -14,7 +14,7 @@ export default function Index() {
     );
   }
 
-  if (!isAuthenticated || !hasPassword) {
+  if (!isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
   }
 
