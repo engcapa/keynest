@@ -7,11 +7,9 @@ import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
-import java.sql.Timestamp
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
-import java.util.TimeZone
 
 private data class MysqlConnParams(
   val host: String,
@@ -91,21 +89,30 @@ private fun ensureTable(conn: Connection) {
   conn.createStatement().use { it.execute(DDL_CREATE.trimIndent()) }
 }
 
-private fun tsToIso(ts: Timestamp?): String {
-  if (ts == null) return ""
-  return DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ts.time))
+private fun tsToIso(value: String?): String {
+  if (value.isNullOrEmpty()) return ""
+  return try {
+    // MySQL returns DATETIME as "yyyy-MM-dd HH:mm:ss[.SSS]" — convert to ISO-8601
+    val normalized = value.replace(' ', 'T').let {
+      if (!it.endsWith("Z") && !it.contains("+")) "${it}Z" else it
+    }
+    DateTimeFormatter.ISO_INSTANT.format(Instant.parse(normalized))
+  } catch (_: Throwable) {
+    value
+  }
 }
 
-private val UTC_CAL: Calendar get() = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+private val MYSQL_DATETIME_FMT: DateTimeFormatter =
+  DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC)
 
-private fun isoToTimestamp(value: String?): Timestamp {
+private fun isoToMysqlDatetime(value: String?): String {
   val iso = value?.takeIf { it.isNotEmpty() }
   val instant = try {
     if (iso != null) Instant.parse(iso) else Instant.now()
   } catch (_: Throwable) {
     Instant.now()
   }
-  return Timestamp(instant.toEpochMilli())
+  return MYSQL_DATETIME_FMT.format(instant)
 }
 
 private fun toAccountMap(rs: ResultSet): Map<String, Any?> = mapOf(
@@ -120,8 +127,8 @@ private fun toAccountMap(rs: ResultSet): Map<String, Any?> = mapOf(
   "type" to (rs.getString("type") ?: "totp"),
   "counter" to rs.getInt("counter"),
   "pinned" to (rs.getInt("pinned") == 1),
-  "createdAt" to tsToIso(rs.getTimestamp("created_at", UTC_CAL)),
-  "updatedAt" to tsToIso(rs.getTimestamp("updated_at", UTC_CAL)),
+  "createdAt" to tsToIso(rs.getString("created_at")),
+  "updatedAt" to tsToIso(rs.getString("updated_at")),
 )
 
 private fun bindAccount(ps: PreparedStatement, a: Map<String, Any?>) {
@@ -136,8 +143,8 @@ private fun bindAccount(ps: PreparedStatement, a: Map<String, Any?>) {
   ps.setString(9, (a["type"] as? String) ?: "totp")
   ps.setInt(10, ((a["counter"] as? Number)?.toInt()) ?: 0)
   ps.setInt(11, if (a["pinned"] as? Boolean == true) 1 else 0)
-  ps.setTimestamp(12, isoToTimestamp(a["createdAt"] as? String), UTC_CAL)
-  ps.setTimestamp(13, isoToTimestamp(a["updatedAt"] as? String), UTC_CAL)
+  ps.setString(12, isoToMysqlDatetime(a["createdAt"] as? String))
+  ps.setString(13, isoToMysqlDatetime(a["updatedAt"] as? String))
 }
 
 private const val SQL_UPSERT = """
