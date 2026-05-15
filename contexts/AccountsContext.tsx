@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { loadAccounts, saveAccounts, getMysqlConfig, setMysqlConfig, clearMysqlConfig } from '@/lib/storage';
 import type { MysqlConfig } from '@/lib/storage';
 import { apiRequest } from '@/lib/query-client';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   fetchAccountsFromMysql,
   pushAccountToMysql,
@@ -85,6 +86,7 @@ export function mergeById(local: OTPAccount[], remote: OTPAccount[]): {
 }
 
 export function AccountsProvider({ children }: { children: React.ReactNode }) {
+  const { isAnonymous } = useAuth();
   const [accounts, setAccounts] = useState<OTPAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,7 +104,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
 
   const syncStrategy: SyncStrategy =
     canJdbc && mysqlConfig ? 'android-jdbc' :
-    Platform.OS === 'web' && webSyncAvailableRef.current ? 'web-http' :
+    Platform.OS === 'web' && !isAnonymous && webSyncAvailableRef.current ? 'web-http' :
     'none';
 
   useEffect(() => {
@@ -113,17 +115,19 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
         setAccounts(local);
 
         if (Platform.OS === 'web') {
-          webSyncAvailableRef.current = await probeWebSync();
-          if (webSyncAvailableRef.current) {
-            try {
-              const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
-              if (Array.isArray(remote)) {
-                const { merged } = mergeById(local, remote);
-                const normalized = migrateLocal(merged);
-                setAccounts(normalized);
-                await saveAccounts(normalized);
-              }
-            } catch (e) { console.error('[sync] initial pull failed', e); }
+          if (!isAnonymous) {
+            webSyncAvailableRef.current = await probeWebSync();
+            if (webSyncAvailableRef.current) {
+              try {
+                const remote = await apiRequest('GET', '/api/accounts') as OTPAccount[];
+                if (Array.isArray(remote)) {
+                  const { merged } = mergeById(local, remote);
+                  const normalized = migrateLocal(merged);
+                  setAccounts(normalized);
+                  await saveAccounts(normalized);
+                }
+              } catch (e) { console.error('[sync] initial pull failed', e); }
+            }
           }
           return;
         }
@@ -358,7 +362,7 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
   const canSyncRemote =
     syncStrategy === 'android-jdbc' ? !!mysqlConfig :
     syncStrategy === 'web-http' ? webSyncAvailableRef.current :
-    Platform.OS === 'web'; // allow probe on demand
+    Platform.OS === 'web' && !isAnonymous;
 
   return (
     <AccountsContext.Provider value={{
