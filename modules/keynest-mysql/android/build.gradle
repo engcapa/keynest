@@ -18,9 +18,10 @@ android {
 }
 
 dependencies {
-  implementation("com.mysql:mysql-connector-j:8.4.0") {
-    // Key Nest only uses the JDBC driver path. Connector/J pulls protobuf for
-    // X DevAPI, which makes Android dex merging much heavier for release APKs.
-    exclude group: "com.google.protobuf", module: "protobuf-java"
-  }
+  // Connector/J 8.x makes com.mysql.cj.MysqlType `implements java.sql.SQLType`,
+  // and Android's java.sql package never included SQLType — even SELECT 1 fails
+  // with NoClassDefFoundError once MysqlType is touched. 5.1.x predates JDBC 4.2
+  // and gates all SQLType-bearing classes (JDBC42*) behind a runtime
+  // Class.forName("java.sql.JDBCType") check, so they're never loaded on Android.
+  implementation("mysql:mysql-connector-java:5.1.49")
 }

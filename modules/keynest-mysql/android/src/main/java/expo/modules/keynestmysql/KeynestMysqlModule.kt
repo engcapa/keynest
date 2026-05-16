@@ -21,15 +21,22 @@ private data class MysqlConnParams(
 ) {
   fun jdbcUrl(): String {
     val encodedDb = java.net.URLEncoder.encode(database, "UTF-8")
-    val params = listOf(
-      "sslMode=$sslMode",
+    // Connector/J 5.1.x doesn't recognise sslMode — translate to its SSL flags.
+    // REQUIRED ⇒ useSSL=true&requireSSL=true (no cert verification, matching the
+    // 8.x sslMode=REQUIRED semantics). DISABLED ⇒ useSSL=false.
+    val sslParams = if (sslMode == "DISABLED") {
+      listOf("useSSL=false")
+    } else {
+      listOf("useSSL=true", "requireSSL=true", "verifyServerCertificate=false")
+    }
+    val params = (sslParams + listOf(
       "allowPublicKeyRetrieval=true",
       "serverTimezone=UTC",
       "connectTimeout=5000",
       "socketTimeout=8000",
       "characterEncoding=UTF-8",
       "useUnicode=true",
-    ).joinToString("&")
+    )).joinToString("&")
     return "jdbc:mysql://$host:$port/$encodedDb?$params"
   }
 }
@@ -56,7 +63,7 @@ private fun parseCfg(cfg: Map<String, Any?>): MysqlConnParams {
 
 private fun ensureDriverLoaded() {
   try {
-    Class.forName("com.mysql.cj.jdbc.Driver")
+    Class.forName("com.mysql.jdbc.Driver")
   } catch (_: ClassNotFoundException) {
     // ignore — the driver registers itself via ServiceLoader on modern versions
   }
